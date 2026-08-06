@@ -19,7 +19,35 @@ export interface Referenz {
   alt: string;
 }
 
-// Keine kuratierten Referenzen: es liegen noch keine echten Projektfotos
-// des Betriebs vor. Die Sektion blendet sich mit leerem Array selbst aus,
-// bis reale Vorher/Nachher-Aufnahmen geliefert werden.
-export const referenzen: Referenz[] = [];
+export const referenzen: Referenz[] = [
+  {
+    id: "gartenneuanlage",
+    title: "Komplette Gartenneuanlage",
+    ort: "Projektbeispiel",
+    leistung: "Gartenneugestaltung",
+    text: "Aus einer ungestalteten Rasenfläche entstand ein klar gegliederter Garten mit Terrasse, Wegen, Beeten und integrierter Beleuchtung.",
+    afterImage: "/assets/referenzen/gartenneuanlage-nachher.webp",
+    beforeImage: "/assets/referenzen/gartenneuanlage-vorher.webp",
+    alt: "Garten vor und nach der Neugestaltung mit Terrasse und Beleuchtung"
+  },
+  {
+    id: "eingangsbereich",
+    title: "Moderner Eingangsbereich",
+    ort: "Projektbeispiel",
+    leistung: "Pflasterarbeiten",
+    text: "Der provisorische Zugang wurde zu einem geradlinigen Eingangsweg mit sauber eingefassten Kies- und Pflanzflächen ausgebaut.",
+    afterImage: "/assets/referenzen/eingangsbereich-nachher.webp",
+    beforeImage: "/assets/referenzen/eingangsbereich-vorher.webp",
+    alt: "Eingangsbereich vor und nach Pflasterung und Bepflanzung"
+  },
+  {
+    id: "terrasse",
+    title: "Terrasse und Gartenabschluss",
+    ort: "Projektbeispiel",
+    leistung: "Terrassenbau",
+    text: "Die schlichte Bestandsfläche wurde mit großzügigen Platten, klaren Rasenkanten, Bepflanzung und Licht zu einem wohnlichen Außenraum.",
+    afterImage: "/assets/referenzen/terrasse-nachher.webp",
+    beforeImage: "/assets/referenzen/terrasse-vorher.webp",
+    alt: "Terrasse vor und nach der Neugestaltung mit Platten, Rasen und Beleuchtung"
+  }
+];

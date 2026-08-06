@@ -22,7 +22,7 @@ export default function KarrierePage() {
 
       <section className="relative overflow-hidden bg-ink pt-40 pb-20 md:pt-52 md:pb-28">
         <img
-          src="/assets/karriere-hero.png"
+          src="/assets/karriere-hero.webp"
           alt=""
           aria-hidden="true"
           className="absolute inset-0 h-full w-full object-cover opacity-45"

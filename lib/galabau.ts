@@ -54,6 +54,8 @@ export type GalabauConfig = {
     plzPrefixes: string[];
     borderPlzPrefixes: string[];
     places: string[];
+    /** Map centre from the Google profile. Without it the map is skipped. */
+    center?: { lat: number; lng: number };
   };
   contact: {
     phone: string;
@@ -152,7 +154,7 @@ export const galabau: GalabauConfig = {
           "a": "Kleinere Umgestaltungen dauern wenige Tage, komplette Neuanlagen mit Erdarbeiten und Terrasse meist mehrere Wochen. Den Zeitrahmen legen wir vor Baubeginn fest."
         }
       ],
-      "image": "/assets/leistungen/gartenneugestaltung.webp",
+      "image": "/assets/leistungen/gartenneugestaltung-mit-beleuchtung.webp",
       "estimate": {
         "minPerUnit": 120,
         "maxPerUnit": 320,
@@ -207,7 +209,7 @@ export const galabau: GalabauConfig = {
           "a": "Als Faustwert rund zwei Prozent, weg vom Gebäude. Wo das nicht geht, planen wir Rinnen oder Versickerung ein."
         }
       ],
-      "image": "/assets/leistungen/pflasterarbeiten.webp",
+      "image": "/assets/leistungen/pflasterarbeiten-terrasse.webp",
       "estimate": {
         "minPerUnit": 90,
         "maxPerUnit": 210,
@@ -262,7 +264,7 @@ export const galabau: GalabauConfig = {
           "a": "Oft ja, mit Stelzlagern. Voraussetzung ist eine ausreichende Aufbauhöhe an der Tür und ein funktionierendes Gefälle."
         }
       ],
-      "image": "/assets/leistungen/terrassenbau.webp",
+      "image": "/assets/leistungen/terrassenbau-grossformatplatten-01.webp",
       "estimate": {
         "minPerUnit": 140,
         "maxPerUnit": 380,
@@ -317,7 +319,7 @@ export const galabau: GalabauConfig = {
           "a": "Der Formschnitt erfolgt außerhalb der gesetzlichen Schonzeit. Radikale Rückschnitte sind vom 1. März bis 30. September nicht zulässig."
         }
       ],
-      "image": "/assets/leistungen/gartenpflege.webp",
+      "image": "/assets/leistungen/gartenpflege-heckenschnitt.webp",
       "estimate": {
         "minPerUnit": 3,
         "maxPerUnit": 12,
@@ -372,7 +374,7 @@ export const galabau: GalabauConfig = {
           "a": "Bei Sichtschutzwänden und Toren ja. Bei leichten Zäunen genügen oft Einschlaghülsen, das entscheidet der Untergrund."
         }
       ],
-      "image": "/assets/leistungen/zaun-sichtschutz.webp",
+      "image": "/assets/leistungen/zaun-und-sichtschutz.webp",
       "estimate": {
         "minPerUnit": 90,
         "maxPerUnit": 320,
@@ -427,7 +429,7 @@ export const galabau: GalabauConfig = {
           "a": "Inbetriebnahme und Einwintern sind planbare Pauschalen, die wir mit dem Angebot ausweisen."
         }
       ],
-      "image": "/assets/leistungen/bewaesserung.webp",
+      "image": "/assets/leistungen/bewaesserung-rasen-und-beete.webp",
       "estimate": {
         "minPerUnit": 12,
         "maxPerUnit": 35,
@@ -521,7 +523,11 @@ export const galabau: GalabauConfig = {
       "Mannheim",
       "Speyer",
       "Worms"
-    ]
+    ],
+    "center": {
+      "lat": 49.45485,
+      "lng": 8.14585
+    }
   },
   "contact": {
     "phone": "0177 3012354",

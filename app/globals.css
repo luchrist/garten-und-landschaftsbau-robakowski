@@ -128,3 +128,18 @@
     background: rgba(62, 117, 56, 0.08);
   }
 }
+
+/* Leaflet sits in a rounded-4xl (2rem) container, so its bottom-right controls
+   need to clear the corner radius to stay fully legible. The attribution is a
+   licence requirement, not decoration. */
+/* Leaflet zeroes control margins via `.leaflet-bottom .leaflet-control`, so the
+   override has to match at least that specificity to stick. */
+.leaflet-container .leaflet-bottom .leaflet-control-attribution {
+  margin: 0 0.75rem 0.75rem 0;
+  border-radius: 0.5rem;
+  padding: 0.15rem 0.5rem;
+  font-size: 10px;
+}
+.leaflet-container .leaflet-top .leaflet-control-zoom {
+  margin: 0.75rem 0 0 0.75rem;
+}

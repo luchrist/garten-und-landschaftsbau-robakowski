@@ -96,6 +96,32 @@ export default function DatenschutzPage() {
           schnellen und effizienten Bereitstellung unseres Online-Angebots (Art. 6 Abs. 1 lit. f DSGVO).
         </p>
       </Section>
+
+      <Section title="10. Kartendarstellung (OpenStreetMap)">
+        <p>
+          Zur Darstellung unseres Einsatzgebiets binden wir Kartenmaterial von OpenStreetMap ein. Anbieter ist die
+          OpenStreetMap Foundation, St John&rsquo;s Innovation Centre, Cowley Road, Cambridge, CB4 0WS, Vereinigtes
+          Königreich.
+        </p>
+        <p>
+          Beim Aufruf der Seite lädt Ihr Browser die Kartenkacheln direkt von den Servern von OpenStreetMap. Dabei wird
+          Ihre IP-Adresse an OpenStreetMap übertragen. Auf die Verarbeitung dieser Daten haben wir keinen Einfluss. Die
+          Einbindung erfolgt im Interesse einer ansprechenden Darstellung unseres Einsatzgebiets und einer leichten
+          Auffindbarkeit der von uns angegebenen Orte (Art. 6 Abs. 1 lit. f DSGVO).
+        </p>
+        <p>
+          Weitere Informationen finden Sie in der Datenschutzerklärung von OpenStreetMap:{" "}
+          <a
+            href="https://osmfoundation.org/wiki/Privacy_Policy"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-4"
+          >
+            osmfoundation.org/wiki/Privacy_Policy
+          </a>
+          .
+        </p>
+      </Section>
     </LegalLayout>
   );
 }

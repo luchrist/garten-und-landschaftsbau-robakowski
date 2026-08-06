@@ -1,11 +1,11 @@
 import { galleryItems } from "@/lib/gallery-data";
 
 const fallbackImages = [
-  { src: "/assets/gallery-1.webp", alt: "Neu angelegter Garten mit Rasenfläche und Staudenbeeten" },
-  { src: "/assets/gallery-2.webp", alt: "Gepflasterte Einfahrt mit sauberer Randeinfassung" },
-  { src: "/assets/gallery-3.webp", alt: "Terrasse mit Natursteinplatten und Bepflanzung" },
-  { src: "/assets/gallery-4.webp", alt: "Team bei Pflasterarbeiten auf der Baustelle" },
-  { src: "/assets/gallery-5.webp", alt: "Minibagger bei Erdarbeiten im Garten" }
+  { src: "/assets/leistungen/gartenneugestaltung-mit-beleuchtung.webp", alt: "Neu angelegter Garten mit Wegen, Beeten und Beleuchtung" },
+  { src: "/assets/leistungen/pflasterarbeiten-terrasse.webp", alt: "Team bei Pflasterarbeiten auf der Baustelle" },
+  { src: "/assets/leistungen/terrassenbau-grossformatplatten-01.webp", alt: "Terrasse mit großformatigen Platten und Bepflanzung" },
+  { src: "/assets/leistungen/gartenpflege-heckenschnitt.webp", alt: "Gartenpflege mit fachgerechtem Heckenschnitt" },
+  { src: "/assets/leistungen/baumpflege-klettertechnik.webp", alt: "Baumpflege mit Seilklettertechnik" }
 ];
 
 const images = galleryItems.length >= 5 ? galleryItems.slice(0, 5) : fallbackImages;
