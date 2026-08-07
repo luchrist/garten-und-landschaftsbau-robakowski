@@ -28,7 +28,7 @@ export function Referenzen() {
           </div>
           <div className="col-span-12 md:col-span-4">
             <p className="text-[15px] leading-relaxed text-ink/65 md:text-right">
-              Echte Projekte mit Ort und Leistung. Regler ziehen und den Unterschied ansehen.
+              Echte Projekte. Regler ziehen und den Unterschied ansehen.
             </p>
           </div>
         </div>

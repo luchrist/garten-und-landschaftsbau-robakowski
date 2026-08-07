@@ -63,14 +63,6 @@ export default function ProjektAnfragenPage() {
                 </a>
               ) : null}
             </div>
-
-            <div className="mt-6 rounded-4xl border border-ink/10 bg-creme p-7">
-              <span className="field-label">Warum so viele Fragen?</span>
-              <p className="mt-1 text-[13px] leading-relaxed text-ink/65">
-                Jede Antwort erspart eine Rückfrage. Mit Fotos und grober Fläche können wir meist direkt einen
-                Ortstermin mit Aufmaß vorschlagen statt erst dreimal zu telefonieren.
-              </p>
-            </div>
           </aside>
         </div>
       </section>
