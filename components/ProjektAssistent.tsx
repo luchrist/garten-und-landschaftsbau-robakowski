@@ -56,9 +56,11 @@ import { checkServiceArea, type ServiceAreaResult } from "@/lib/service-area";
  *
  * Die Budgetstufen kommen aus dieser internen Kalkulation (`budgetBandsFor`):
  * eine Terrasse über 12 m² wird in Tausenderschritten abgefragt, eine
- * Gartenneugestaltung über 900 m² in Fünfzigtausendern. Solange keine Menge
- * eingetragen ist, gilt eine Leiter je Leistung. Sonst landet jede kleine
- * Anfrage in der untersten Stufe und die Antwort sagt nichts.
+ * Gartenneugestaltung über 900 m² in Fünfzigtausendern, und die Kalkulation
+ * selbst liegt immer über zwei Stufen. Die unterste Stufe liegt bewusst klar
+ * darunter — wer sie wählt, sucht etwas anderes, und das steht als „Budget
+ * unter dem Orientierungsrahmen“ in der Büro-Mail. Solange keine Menge
+ * eingetragen ist, gilt eine Leiter je Leistung.
  */
 
 type PhotoDraft = {

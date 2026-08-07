@@ -1093,17 +1093,17 @@ export function berechneProjekt(input: {
  * Ohne Eintrag (etwa bei reinem „Sonstiges“) gilt die Leiter aus der Config.
  */
 const BUDGET_STUFEN: Partial<Record<GalabauServiceKey, number[]>> = {
-  "zaun-sichtschutz": [1500, 3500, 7000, 15000],
-  baumpflege: [500, 1500, 4000, 10000],
-  bewaesserung: [2000, 4000, 8000, 15000],
-  terrassenbau: [3000, 7000, 15000, 25000],
-  pflasterarbeiten: [3000, 7500, 15000, 30000],
-  gartenneugestaltung: [5000, 12500, 30000, 60000],
-  gewerbeflaechen: [7500, 20000, 50000, 100000]
+  "zaun-sichtschutz": [1000, 2500, 5000, 10000, 20000],
+  baumpflege: [500, 1000, 2500, 5000, 10000],
+  bewaesserung: [1500, 3000, 6000, 10000, 20000],
+  terrassenbau: [2500, 5000, 10000, 20000, 35000],
+  pflasterarbeiten: [2500, 5000, 10000, 20000, 40000],
+  gartenneugestaltung: [5000, 10000, 25000, 50000, 100000],
+  gewerbeflaechen: [5000, 15000, 40000, 80000, 150000]
 };
 
 /** Stufen sollen wie Preisschilder aussehen, nicht wie Rechenergebnisse. */
-const RUNDE_MANTISSEN = [1, 1.5, 2, 2.5, 3, 4, 5, 7.5, 10];
+const RUNDE_MANTISSEN = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 7.5, 10];
 
 const BUDGET_MIN_STUFE = 500;
 
@@ -1129,20 +1129,34 @@ function naechsteStufe(value: number): number {
 }
 
 /**
- * Lage der Stufen relativ zur Mitte der internen Kalkulation.
+ * Lage der Stufen zur internen Kalkulation.
  *
- * Die Rechnung selbst bekommt der Nutzer nicht zu sehen, sie bestimmt aber,
- * wo die Stufen liegen: eine klar darunter, zwei um den erwarteten Wert herum,
- * eine darüber. So ist jede Antwort informativ — bei 40 m² Terrasse genauso
- * wie bei 800 m² Gewerbefläche — statt dass alles in derselben Stufe landet.
+ * Die Rechnung selbst bekommt der Nutzer nicht zu sehen, sie legt aber die
+ * Schwellen fest. Bei einer Kalkulation von 5.000 bis 10.800 € entsteht so
+ * „bis 2.500 / 2.500–5.000 / 5.000–7.500 / 7.500–10.000 / 10.000–15.000 /
+ * mehr“ — die Spanne selbst wird zweigeteilt, statt in einer einzigen Stufe
+ * zu verschwinden:
+ *
+ *   halbe Untergrenze  klar darunter. Wer hier klickt, sucht etwas anderes;
+ *                      der Lead-Score wertet das als „unter“ und die Absage
+ *                      geht ohne Telefonat raus.
+ *   Untergrenze        knapp, aber denkbar.
+ *   Mitte              die untere Hälfte der Kalkulation.
+ *   Obergrenze         die obere Hälfte, das erwartete Ende.
+ *   Obergrenze × 1,5   Luft nach oben für Extras und Sonderwünsche.
  */
-const BUDGET_FAKTOREN = [0.55, 0.85, 1.25, 2];
+const BUDGET_FAKTOREN: Array<(spanne: { low: number; high: number }) => number> = [
+  ({ low }) => low * 0.5,
+  ({ low }) => low,
+  ({ low, high }) => (low + high) / 2,
+  ({ high }) => high,
+  ({ high }) => high * 1.5
+];
 
 function stufenAusKalkulation(spanne: { low: number; high: number }): number[] {
-  const mitte = (spanne.low + spanne.high) / 2;
   const stufen: number[] = [];
   for (const faktor of BUDGET_FAKTOREN) {
-    let wert = rundeAufStufe(mitte * faktor);
+    let wert = rundeAufStufe(faktor(spanne));
     const vorherige = stufen[stufen.length - 1];
     if (vorherige !== undefined && wert <= vorherige) wert = naechsteStufe(vorherige);
     stufen.push(wert);
@@ -1154,12 +1168,15 @@ function formatZahl(value: number): string {
   return new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 }).format(value);
 }
 
-function budgetStufenFor(serviceKeys: string[]): number[] | null {
+/** Wenn nicht einmal die Leistung feststeht (reines „Sonstiges“). */
+const BUDGET_STUFEN_ALLGEMEIN = [2500, 5000, 10000, 25000, 50000];
+
+function budgetStufenFor(serviceKeys: string[]): number[] {
   const leitern = serviceKeys
     .map((key) => BUDGET_STUFEN[key as GalabauServiceKey])
     .filter((stufen): stufen is number[] => Boolean(stufen));
 
-  if (!leitern.length) return null;
+  if (!leitern.length) return BUDGET_STUFEN_ALLGEMEIN;
 
   // Bei mehreren Leistungen gewinnt die teuerste Leiter: Terrasse plus Zaun
   // kostet mehr als der Zaun allein, und die Stufen sind breit genug, dass die
@@ -1178,17 +1195,17 @@ function budgetStufenFor(serviceKeys: string[]): number[] | null {
  * eine über 600 m², obwohl beide dieselbe Leistung sind. Fehlt die Menge
  * (`roughOnly`), ist die Spanne zu breit, um daraus Stufen zu bilden; dann
  * gilt die Leiter der Leistung.
+ *
+ * `galabau.estimator.budgetBands` aus der Config ist damit nicht mehr die
+ * Quelle der Stufen — die Leiter dort ist für jede einzelne Leistung entweder
+ * zu grob oder zu hoch angesetzt.
  */
 export function budgetBandsFor(
   serviceKeys: string[],
   kalkulation?: { low: number; high: number; roughOnly?: boolean } | null
 ): GalabauBudgetBand[] {
-  const ausLeistung = budgetStufenFor(serviceKeys);
   const rechenbar = Boolean(kalkulation && !kalkulation.roughOnly && kalkulation.high > 0);
-
-  if (!rechenbar && !ausLeistung) return galabau.estimator.budgetBands;
-
-  const stufen = rechenbar ? stufenAusKalkulation(kalkulation!) : ausLeistung!;
+  const stufen = rechenbar ? stufenAusKalkulation(kalkulation!) : budgetStufenFor(serviceKeys);
 
   const bands: GalabauBudgetBand[] = [];
   let untergrenze = 0;
@@ -1220,7 +1237,11 @@ export function matchBudget(
   const band = budgetBandsFor(serviceKeys, spanne).find((entry) => entry.id === budgetBandId);
   if (!band || band.id === "unklar") return "unbekannt";
   const bandMax = band.max ?? Number.POSITIVE_INFINITY;
-  if (bandMax < spanne.low) return "unter";
+  // Die Stufen sind auf glatte Beträge gerundet, die Untergrenze der
+  // Kalkulation ist es nicht. Ohne die kleine Toleranz gilt ein Deckel, der
+  // exakt auf der Untergrenze liegt, als passend — obwohl der Auftrag dort
+  // nur im günstigsten Fall hinkommt.
+  if (bandMax <= spanne.low * 1.02) return "unter";
   if (band.min > spanne.high) return "darueber";
   return "passend";
 }
