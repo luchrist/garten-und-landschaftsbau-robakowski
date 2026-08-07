@@ -42,12 +42,13 @@ export function Leistungen() {
               transition={{ type: "spring", stiffness: 110, damping: 22, delay: (index % 3) * 0.06 }}
               className="group relative flex flex-col overflow-hidden rounded-4xl border border-ink/10 bg-white"
             >
-              {/* Flächendeckender Link auf die Leistungsseite. Liegt unter dem
-                  CTA, damit ein Klick auf den Button die Anfrage startet. */}
+              {/* Flächendeckender Link auf die Leistungsseite. Liegt über Bild
+                  und Text (die sonst die Klicks abfangen würden), aber unter
+                  dem CTA, damit ein Klick auf den Button die Anfrage startet. */}
               <a
                 href={`/leistungen/${service.slug}`}
                 aria-label={`${service.label}: Leistung ansehen`}
-                className="absolute inset-0 z-0 rounded-4xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-laub-500"
+                className="absolute inset-0 z-20 rounded-4xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-laub-500"
               />
 
               <div className="relative aspect-[4/3] overflow-hidden bg-creme">
@@ -68,7 +69,7 @@ export function Leistungen() {
                 <div className="mt-auto flex flex-wrap items-center gap-x-5 gap-y-3">
                   <a
                     href={buildAnfrageHref(presetFuerLeistung(service.key))}
-                    className="relative z-10 inline-flex items-center gap-2 rounded-full bg-laub-500 px-5 py-2.5 text-[13px] font-medium text-bone transition-colors hover:bg-laub-600"
+                    className="relative z-30 inline-flex items-center gap-2 rounded-full bg-laub-500 px-5 py-2.5 text-[13px] font-medium text-bone transition-colors hover:bg-laub-600"
                   >
                     {service.cta}
                     <span>&rarr;</span>
