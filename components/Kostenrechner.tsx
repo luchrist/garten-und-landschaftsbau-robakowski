@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import { useHandoffPublisher } from "@/components/HandoffLinks";
 import { galabau } from "@/lib/galabau";
+import { buildAnfrageHref, presetFuerLeistung, type Handoff } from "@/lib/handoff";
 import {
   BAU_MODELLE,
   berechneBau,
@@ -37,13 +39,43 @@ import {
  */
 
 type Props = {
-  /** Leistung vorauswählen, z.B. auf einer Leistungsseite. */
-  serviceKey?: string;
+  /**
+   * Vorbelegung aus der Adresszeile oder von der aufrufenden Seite — Leistung,
+   * Menge, Material, Zugang, Gelände, Pflegeumfang.
+   */
+  initial?: Handoff;
   /** Kompakte Darstellung ohne Positionsaufschlüsselung. */
   compact?: boolean;
 };
 
 const PFLEGE_KEY = "gartenpflege";
+
+/**
+ * Aus der Übergabe die Startwerte der Felder ableiten. „unklar“ ist im Rechner
+ * keine wählbare Option — dort muss eine Annahme her, sonst ließe sich nichts
+ * rechnen.
+ */
+function startwerte(initial: Handoff, serviceKey: string) {
+  const modell = findBauModell(serviceKey);
+  const istPflege = serviceKey === PFLEGE_KEY;
+  return {
+    menge: (modell?.unit === "lfm" ? initial.lfm : initial.qm) ?? "",
+    varianteId: initial.material ?? "",
+    bestand: initial.bestand && initial.bestand !== "unklar" ? initial.bestand : ("frei" as Bestandslage),
+    zugang: initial.zugang && initial.zugang !== "unklar" ? initial.zugang : ("gut" as Zugang),
+    hang: initial.hang && initial.hang !== "unklar" ? initial.hang : ("eben" as Hangstufe),
+    extras: initial.extras ?? [],
+    pflegeLeistungen: initial.pflege?.length ? [...initial.pflege] : ["rasen"],
+    // Eine Fläche, die als allgemeines qm ankommt, ist bei Gartenpflege die Rasenfläche.
+    rasenQm: initial.rasen ?? (istPflege ? initial.qm ?? "" : ""),
+    beetQm: initial.beet ?? "",
+    heckeLfm: initial.hecke ?? "",
+    heckeSchnitte: initial.schnitte ?? 1,
+    zustand: initial.zustand ?? ("gepflegt" as Pflegezustand),
+    turnus: initial.turnus ?? ("zweiwoechentlich" as Turnus),
+    entsorgung: initial.entsorgung ?? true
+  };
+}
 
 function PositionListe({ positionen }: { positionen: Kostenposition[] }) {
   return (
@@ -63,35 +95,36 @@ function PositionListe({ positionen }: { positionen: Kostenposition[] }) {
   );
 }
 
-export function Kostenrechner({ serviceKey: initialServiceKey = "", compact = false }: Props) {
+export function Kostenrechner({ initial = {}, compact = false }: Props) {
   const rechenbareServices = useMemo(
     () => galabau.services.filter((service) => findBauModell(service.key) || service.key === PFLEGE_KEY),
     []
   );
 
-  const [serviceKey, setServiceKey] = useState(() =>
-    rechenbareServices.some((service) => service.key === initialServiceKey)
-      ? initialServiceKey
-      : rechenbareServices[0]?.key ?? ""
-  );
+  const startServiceKey = rechenbareServices.some((service) => service.key === initial.leistung)
+    ? (initial.leistung as string)
+    : rechenbareServices[0]?.key ?? "";
+  const start = startwerte(initial, startServiceKey);
+
+  const [serviceKey, setServiceKey] = useState(startServiceKey);
 
   // Bau
-  const [menge, setMenge] = useState("");
-  const [varianteId, setVarianteId] = useState("");
-  const [bestand, setBestand] = useState<Bestandslage>("frei");
-  const [zugang, setZugang] = useState<Zugang>("gut");
-  const [hang, setHang] = useState<Hangstufe>("eben");
-  const [extras, setExtras] = useState<string[]>([]);
+  const [menge, setMenge] = useState(start.menge);
+  const [varianteId, setVarianteId] = useState(start.varianteId);
+  const [bestand, setBestand] = useState<Bestandslage>(start.bestand);
+  const [zugang, setZugang] = useState<Zugang>(start.zugang);
+  const [hang, setHang] = useState<Hangstufe>(start.hang);
+  const [extras, setExtras] = useState<string[]>(start.extras);
 
   // Pflege
-  const [pflegeLeistungen, setPflegeLeistungen] = useState<string[]>(["rasen"]);
-  const [rasenQm, setRasenQm] = useState("");
-  const [beetQm, setBeetQm] = useState("");
-  const [heckeLfm, setHeckeLfm] = useState("");
-  const [heckeSchnitte, setHeckeSchnitte] = useState(1);
-  const [zustand, setZustand] = useState<Pflegezustand>("gepflegt");
-  const [turnus, setTurnus] = useState<Turnus>("zweiwoechentlich");
-  const [entsorgung, setEntsorgung] = useState(true);
+  const [pflegeLeistungen, setPflegeLeistungen] = useState<string[]>(start.pflegeLeistungen);
+  const [rasenQm, setRasenQm] = useState(start.rasenQm);
+  const [beetQm, setBeetQm] = useState(start.beetQm);
+  const [heckeLfm, setHeckeLfm] = useState(start.heckeLfm);
+  const [heckeSchnitte, setHeckeSchnitte] = useState(start.heckeSchnitte);
+  const [zustand, setZustand] = useState<Pflegezustand>(start.zustand);
+  const [turnus, setTurnus] = useState<Turnus>(start.turnus);
+  const [entsorgung, setEntsorgung] = useState(start.entsorgung);
 
   const istPflege = serviceKey === PFLEGE_KEY;
   const modell = findBauModell(serviceKey);
@@ -151,15 +184,76 @@ export function Kostenrechner({ serviceKey: initialServiceKey = "", compact = fa
     );
   }
 
-  const anfrageHref = useMemo(() => {
-    const params = new URLSearchParams({ leistung: serviceKey });
+  /**
+   * Alles, was hier eingetragen wurde, wandert mit in den Projekt-Assistenten.
+   * Wer Material, Zugang und Gelände schon einmal beantwortet hat, soll die
+   * Fragen im Formular nicht ein zweites Mal sehen.
+   *
+   * Material, Zugang, Gelände, Zustand und Turnus gehen aber erst mit, sobald
+   * eine Größe eingetragen ist. Ohne Größe hat der Besucher den Rechner nicht
+   * wirklich benutzt — dann wären es die Vorgaben des Rechners und keine
+   * Antworten, und im Assistenten stünde eine ungeprüfte Behauptung.
+   */
+  const handoff = useMemo<Handoff>(() => {
+    const next: Handoff = { ...presetFuerLeistung(serviceKey), leistung: serviceKey };
+
     if (istPflege) {
-      if (Number(rasenQm) > 0) params.set("qm", rasenQm);
-    } else if (Number(menge) > 0) {
-      params.set(modell?.unit === "lfm" ? "lfm" : "qm", menge);
+      next.pflege = pflegeLeistungen;
+      const flaechen = [rasenQm, beetQm, heckeLfm].some((wert) => Number(wert) > 0);
+      if (Number(rasenQm) > 0) {
+        next.rasen = rasenQm;
+        next.qm = rasenQm;
+      }
+      if (Number(beetQm) > 0) next.beet = beetQm;
+      if (Number(heckeLfm) > 0) {
+        next.hecke = heckeLfm;
+        next.schnitte = heckeSchnitte;
+      }
+      if (flaechen) {
+        next.zustand = zustand;
+        next.turnus = turnus;
+        next.entsorgung = entsorgung;
+      }
+      return next;
     }
-    return `/projekt-anfragen?${params.toString()}`;
-  }, [serviceKey, istPflege, rasenQm, menge, modell]);
+
+    if (modell && Number(menge) > 0) {
+      next[modell.unit === "lfm" ? "lfm" : "qm"] = menge;
+      if (aktiveVariante) next.material = aktiveVariante.id;
+      next.bestand = bestand;
+      next.zugang = zugang;
+      next.hang = hang;
+      if (extras.length) next.extras = extras;
+    }
+    return next;
+  }, [
+    serviceKey,
+    istPflege,
+    pflegeLeistungen,
+    rasenQm,
+    beetQm,
+    heckeLfm,
+    heckeSchnitte,
+    zustand,
+    turnus,
+    entsorgung,
+    modell,
+    menge,
+    aktiveVariante,
+    bestand,
+    zugang,
+    hang,
+    extras
+  ]);
+
+  const anfrageHref = buildAnfrageHref(handoff);
+
+  // Damit die Buttons im Seitenlayout (z.B. „Projekt anfragen“ in der
+  // Seitenleiste von /kosten) denselben Stand mitnehmen wie der Button hier.
+  const publishHandoff = useHandoffPublisher();
+  useEffect(() => {
+    publishHandoff(handoff);
+  }, [handoff, publishHandoff]);
 
   const zeigtFlaechenfelder = pflegeLeistungen.some((id) =>
     ["rasen", "beet", "hecke", "vertikutieren"].includes(id)

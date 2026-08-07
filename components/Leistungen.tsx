@@ -3,10 +3,20 @@
 import { motion } from "framer-motion";
 
 import { galabau } from "@/lib/galabau";
+import { buildAnfrageHref, presetFuerLeistung } from "@/lib/handoff";
 
 /**
- * Startseite, Abschnitt "Kurze Leistungsübersicht" aus dem Konzept: jede Karte
- * verlinkt auf ihre Leistungsseite und trägt den leistungsspezifischen CTA.
+ * Startseite, Abschnitt "Kurze Leistungsübersicht" aus dem Konzept.
+ *
+ * Zwei Ziele pro Karte, bewusst getrennt: Die Karte selbst führt auf die
+ * Leistungsseite, wer erst lesen will. Der Button darauf startet direkt die
+ * Anfrage mit dieser Leistung vorausgewählt — wer schon weiß, was er braucht,
+ * soll nicht über eine Zwischenseite laufen und die Leistung dort ein zweites
+ * Mal auswählen müssen.
+ *
+ * Deshalb ist die Karte kein <a> mehr, sondern ein Container mit einem
+ * flächendeckenden Link darunter und dem CTA darüber — verschachtelte Links
+ * wären ungültiges Markup.
  */
 export function Leistungen() {
   return (
@@ -24,15 +34,22 @@ export function Leistungen() {
 
         <div className="mt-14 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {galabau.services.map((service, index) => (
-            <motion.a
+            <motion.div
               key={service.key}
-              href={`/leistungen/${service.slug}`}
               initial={{ opacity: 0, y: 24 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: "-60px" }}
               transition={{ type: "spring", stiffness: 110, damping: 22, delay: (index % 3) * 0.06 }}
-              className="group relative overflow-hidden rounded-4xl border border-ink/10 bg-white"
+              className="group relative flex flex-col overflow-hidden rounded-4xl border border-ink/10 bg-white"
             >
+              {/* Flächendeckender Link auf die Leistungsseite. Liegt unter dem
+                  CTA, damit ein Klick auf den Button die Anfrage startet. */}
+              <a
+                href={`/leistungen/${service.slug}`}
+                aria-label={`${service.label}: Leistung ansehen`}
+                className="absolute inset-0 z-0 rounded-4xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-laub-500"
+              />
+
               <div className="relative aspect-[4/3] overflow-hidden bg-creme">
                 <img
                   src={service.image}
@@ -45,14 +62,23 @@ export function Leistungen() {
                   {service.label}
                 </span>
               </div>
-              <div className="flex flex-col gap-4 p-6">
+
+              <div className="flex flex-1 flex-col gap-5 p-6">
                 <p className="text-[14px] leading-relaxed text-ink/70">{service.teaser}</p>
-                <span className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.2em] text-laub-600 transition-colors group-hover:text-laub-700">
-                  {service.cta}
-                  <span className="transition-transform duration-300 group-hover:translate-x-1">&rarr;</span>
-                </span>
+                <div className="mt-auto flex flex-wrap items-center gap-x-5 gap-y-3">
+                  <a
+                    href={buildAnfrageHref(presetFuerLeistung(service.key))}
+                    className="relative z-10 inline-flex items-center gap-2 rounded-full bg-laub-500 px-5 py-2.5 text-[13px] font-medium text-bone transition-colors hover:bg-laub-600"
+                  >
+                    {service.cta}
+                    <span>&rarr;</span>
+                  </a>
+                  <span className="font-mono text-[11px] uppercase tracking-[0.2em] text-ink/45 transition-colors group-hover:text-laub-700">
+                    Mehr erfahren
+                  </span>
+                </div>
               </div>
-            </motion.a>
+            </motion.div>
           ))}
         </div>
       </div>

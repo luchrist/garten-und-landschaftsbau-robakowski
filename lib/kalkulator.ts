@@ -1,4 +1,4 @@
-import { galabau, type GalabauServiceKey } from "@/lib/galabau";
+import { galabau, type GalabauBudgetBand, type GalabauServiceKey } from "@/lib/galabau";
 
 /**
  * Kostenmodell für GaLaBau-Projekte.
@@ -1075,12 +1075,82 @@ export function berechneProjekt(input: {
 }
 
 /* ------------------------------------------------------------------ *
+ * Budgetrahmen je Leistung
+ * ------------------------------------------------------------------ */
+
+/**
+ * Obergrenzen der Budgetstufen, je Leistung.
+ *
+ * Eine gemeinsame Leiter in Zehntausenderschritten macht die Frage für die
+ * kleinen Gewerke wertlos: Ein Zaun über 30 lfm liegt bei rund 3.000 bis
+ * 6.000 €, landet also fast immer in „bis 5.000 €“ — und wir erfahren nichts.
+ * Umgekehrt ist „bis 5.000 €“ bei einer Gartenneugestaltung keine sinnvolle
+ * Antwortmöglichkeit. Die Stufen orientieren sich deshalb an der Kalkulation
+ * des jeweiligen Modells (Referenzmenge ± typische Ausreißer nach unten und
+ * oben) und liegen dort eng, wo die Leistung tatsächlich stattfindet.
+ *
+ * Ohne Eintrag (etwa bei reinem „Sonstiges“) gilt die Leiter aus der Config.
+ */
+const BUDGET_STUFEN: Partial<Record<GalabauServiceKey, number[]>> = {
+  "zaun-sichtschutz": [1500, 3500, 7000, 15000],
+  baumpflege: [500, 1500, 4000, 10000],
+  bewaesserung: [2000, 4000, 8000, 15000],
+  terrassenbau: [3000, 7000, 15000, 25000],
+  pflasterarbeiten: [3000, 7500, 15000, 30000],
+  gartenneugestaltung: [7500, 20000, 40000, 75000],
+  gewerbeflaechen: [10000, 25000, 60000, 120000]
+};
+
+function formatZahl(value: number): string {
+  return new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 }).format(value);
+}
+
+/**
+ * Budgetstufen für eine Auswahl von Leistungen.
+ *
+ * Bei mehreren Leistungen gewinnt die teuerste Leiter: Terrasse plus Zaun
+ * kostet mehr als der Zaun allein, und die Stufen sind breit genug, dass die
+ * Summe darin Platz hat. Eine Leiter aus addierten Schwellen wäre genauer,
+ * würde aber Rahmen anbieten, die es für die Einzelleistung nie gibt.
+ */
+export function budgetBandsFor(serviceKeys: string[]): GalabauBudgetBand[] {
+  const leitern = serviceKeys
+    .map((key) => BUDGET_STUFEN[key as GalabauServiceKey])
+    .filter((stufen): stufen is number[] => Boolean(stufen));
+
+  if (!leitern.length) return galabau.estimator.budgetBands;
+
+  const stufen = leitern.reduce((weiteste, kandidat) =>
+    kandidat[kandidat.length - 1] > weiteste[weiteste.length - 1] ? kandidat : weiteste
+  );
+
+  const bands: GalabauBudgetBand[] = [];
+  let untergrenze = 0;
+  for (const grenze of stufen) {
+    bands.push({
+      id: untergrenze === 0 ? `bis-${grenze}` : `${untergrenze}-${grenze}`,
+      label: untergrenze === 0 ? `bis ${formatEur(grenze)}` : `${formatZahl(untergrenze)} – ${formatEur(grenze)}`,
+      min: untergrenze,
+      max: grenze
+    });
+    untergrenze = grenze;
+  }
+  bands.push({ id: `ab-${untergrenze}`, label: `mehr als ${formatEur(untergrenze)}`, min: untergrenze, max: null });
+  bands.push({ id: "unklar", label: "Noch unklar", min: 0, max: null });
+  return bands;
+}
+
+/* ------------------------------------------------------------------ *
  * Budget-Abgleich und Formatierung
  * ------------------------------------------------------------------ */
 
-export function matchBudget(budgetBandId: string, spanne: { low: number; high: number } | null): BudgetMatch {
+export function matchBudget(
+  budgetBandId: string,
+  spanne: { low: number; high: number } | null,
+  serviceKeys: string[] = []
+): BudgetMatch {
   if (!spanne) return "unbekannt";
-  const band = galabau.estimator.budgetBands.find((entry) => entry.id === budgetBandId);
+  const band = budgetBandsFor(serviceKeys).find((entry) => entry.id === budgetBandId);
   if (!band || band.id === "unklar") return "unbekannt";
   const bandMax = band.max ?? Number.POSITIVE_INFINITY;
   if (bandMax < spanne.low) return "unter";

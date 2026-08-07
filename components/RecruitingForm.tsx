@@ -42,7 +42,7 @@ const BERUFSJAHRE_OPTIONS = [
 
 const FUEHRERSCHEIN_OPTIONS = ["B (PKW)", "BE (Anhänger)", "C1/C (LKW)", "Kein Führerschein"];
 
-const GESCHLECHT_OPTIONS = ["Männlich", "Weiblich", "Divers"];
+const ANREDE_OPTIONS = ["Herr", "Frau", "Divers"];
 
 const CV_MAX_MB = 4;
 const CV_ACCEPT = ".pdf,.doc,.docx,image/*";
@@ -79,7 +79,7 @@ type FormState = {
   fuehrerschein: string[];
   wohnort: string;
   startdatum: string;
-  geschlecht: string;
+  anrede: string;
   vorname: string;
   nachname: string;
   telefon: string;
@@ -97,7 +97,7 @@ const INITIAL_STATE: FormState = {
   fuehrerschein: [],
   wohnort: "",
   startdatum: "",
-  geschlecht: "",
+  anrede: "",
   vorname: "",
   nachname: "",
   telefon: "",
@@ -233,7 +233,7 @@ export function RecruitingForm({ variant = "page" }: { variant?: "page" | "widge
       fuehrerschein: state.fuehrerschein,
       wohnort: state.wohnort.trim(),
       startdatum: state.startdatum.trim(),
-      geschlecht: state.geschlecht,
+      anrede: state.anrede,
       vorname: state.vorname.trim(),
       nachname: state.nachname.trim(),
       name: `${state.vorname.trim()} ${state.nachname.trim()}`.trim(),
@@ -431,11 +431,11 @@ export function RecruitingForm({ variant = "page" }: { variant?: "page" | "widge
           <div className="mt-6">
             <span className="field-label">Anrede</span>
             <div className="grid gap-3 sm:grid-cols-3">
-              {GESCHLECHT_OPTIONS.map((option) => (
+              {ANREDE_OPTIONS.map((option) => (
                 <ChoiceButton
                   key={option}
-                  selected={state.geschlecht === option}
-                  onClick={() => patch({ geschlecht: option })}
+                  selected={state.anrede === option}
+                  onClick={() => patch({ anrede: option })}
                 >
                   {option}
                 </ChoiceButton>

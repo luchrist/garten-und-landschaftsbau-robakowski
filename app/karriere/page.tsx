@@ -25,7 +25,7 @@ export default function KarrierePage() {
           src="/assets/karriere-hero.webp"
           alt=""
           aria-hidden="true"
-          className="absolute inset-0 h-full w-full object-cover opacity-45"
+          className="absolute inset-0 h-full w-full object-cover object-top opacity-45"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-ink via-ink/55 to-ink/25" />
         <div className="relative z-10 mx-auto max-w-[1400px] px-6 md:px-10">

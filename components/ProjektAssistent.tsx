@@ -1,13 +1,16 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import { useHandoffPublisher } from "@/components/HandoffLinks";
 import { galabau } from "@/lib/galabau";
+import { buildKostenHref, type Handoff } from "@/lib/handoff";
 import {
   bestandFrage,
   bestandOptionen,
   berechnePflege,
   berechneProjekt,
+  budgetBandsFor,
   findBauModell,
   HANG_OPTIONEN,
   isHybridService,
@@ -50,6 +53,11 @@ import { checkServiceArea, type ServiceAreaResult } from "@/lib/service-area";
  * fragt nur noch den Rahmen ab und wie belastbar er ist. Intern wird die
  * Kalkulation trotzdem gerechnet, für Priorisierung und Budget-Abgleich im
  * Büro.
+ *
+ * Die Budgetstufen hängen an der gewählten Leistung (`budgetBandsFor`): ein
+ * Zaun wird in Tausenderschritten abgefragt, eine Gartenneugestaltung in
+ * Zehntausendern. Sonst landet jede kleine Anfrage in der untersten Stufe und
+ * die Antwort sagt nichts.
  */
 
 type PhotoDraft = {
@@ -182,6 +190,39 @@ const FESTIGKEIT_OPTIONS: Array<{ id: Exclude<BudgetFestigkeit, "">; label: stri
   { id: "unklar", label: "Erst einmal wissen, was realistisch ist", hint: "Bitte offen sagen, was die Sache kostet." }
 ];
 
+/**
+ * Startzustand aus der Übergabe. Was auf der Leistungsseite oder im
+ * Kostenrechner schon beantwortet wurde, steht hier bereits ausgefüllt —
+ * ändern lässt es sich trotzdem, die Schritte werden nicht übersprungen.
+ */
+function ausHandoff(initial: Handoff): AssistantState {
+  const key = galabau.services.some((service) => service.key === initial.leistung)
+    ? (initial.leistung as string)
+    : "";
+  const pflegeService = key ? isPflegeService(key) : false;
+
+  return {
+    ...INITIAL_STATE,
+    serviceKeys: key ? [key] : [],
+    gewerbeArt: key && isHybridService(key) ? initial.art ?? "" : "",
+    qm: initial.qm ?? "",
+    lfm: initial.lfm ?? "",
+    bestand: initial.bestand ?? "unklar",
+    zugang: initial.zugang ?? "unklar",
+    hang: initial.hang ?? "unklar",
+    pflegeLeistungen: initial.pflege?.length ? [...initial.pflege] : pflegeService ? ["rasen"] : [],
+    // Eine allgemein übergebene Fläche ist bei Pflege die Rasenfläche.
+    rasenQm: initial.rasen ?? (pflegeService ? initial.qm ?? "" : ""),
+    beetQm: initial.beet ?? "",
+    heckeLfm: initial.hecke ?? "",
+    heckeSchnitte: initial.schnitte ?? 1,
+    zustand: initial.zustand ?? "gepflegt",
+    turnus: initial.turnus ?? "",
+    entsorgung: initial.entsorgung ?? true,
+    kundentyp: initial.kundentyp ?? "privat"
+  };
+}
+
 const PHOTO_MAX_EDGE = 1600;
 
 /**
@@ -250,27 +291,13 @@ function FieldBlock({ label, children }: { label: string; children: React.ReactN
 
 export function ProjektAssistent({
   variant = "page",
-  initialServiceKey = "",
-  initialQm = "",
-  initialLfm = ""
+  initial = {}
 }: {
   variant?: "page" | "widget";
-  /** Vorauswahl aus dem Kostenrechner oder einer Leistungsseite. */
-  initialServiceKey?: string;
-  initialQm?: string;
-  initialLfm?: string;
+  /** Vorauswahl aus dem Kostenrechner, einer Leistungsseite oder der Adresszeile. */
+  initial?: Handoff;
 }) {
-  const [state, setState] = useState<AssistantState>(() => {
-    const known = galabau.services.some((service) => service.key === initialServiceKey);
-    return {
-      ...INITIAL_STATE,
-      serviceKeys: known ? [initialServiceKey] : [],
-      qm: /^\d+$/.test(initialQm) ? initialQm : "",
-      lfm: /^\d+$/.test(initialLfm) ? initialLfm : "",
-      pflegeLeistungen: known && isPflegeService(initialServiceKey) ? ["rasen"] : [],
-      rasenQm: known && isPflegeService(initialServiceKey) && /^\d+$/.test(initialQm) ? initialQm : ""
-    };
-  });
+  const [state, setState] = useState<AssistantState>(() => ausHandoff(initial));
   const [stepIndex, setStepIndex] = useState(0);
   const [stepError, setStepError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -389,12 +416,56 @@ export function ProjektAssistent({
     state.kundentyp
   ]);
 
+  const budgetBands = useMemo(() => budgetBandsFor(bauKeys), [bauKeys]);
+
+  // Wer die Leistung nachträglich wechselt, hätte sonst eine Stufe ausgewählt,
+  // die es auf der neuen Leiter nicht mehr gibt: sichtbar keine Auswahl, aber
+  // eine ID im State, die die Validierung durchwinkt.
+  useEffect(() => {
+    if (state.budgetBand && !budgetBands.some((band) => band.id === state.budgetBand)) {
+      setState((current) => ({ ...current, budgetBand: "", budgetFestigkeit: "" }));
+    }
+  }, [budgetBands, state.budgetBand]);
+
   const budgetMatch: BudgetMatch = useMemo(() => {
     if (!bauKalkulation || !state.budgetBand) return "unbekannt";
-    return matchBudget(state.budgetBand, bauKalkulation);
-  }, [bauKalkulation, state.budgetBand]);
+    return matchBudget(state.budgetBand, bauKalkulation, bauKeys);
+  }, [bauKalkulation, state.budgetBand, bauKeys]);
 
   const projektGroesse: ProjectSize = bauKalkulation?.size ?? pflegeKalkulation?.size ?? "klein";
+
+  /**
+   * Wer mitten in der Anfrage doch erst rechnen will, soll den Rechner nicht
+   * leer vorfinden. Der Rechner kennt nur eine Leistung, deshalb geht die erste
+   * rechenbare Auswahl mit.
+   */
+  const kostenHandoff = useMemo<Handoff>(() => {
+    const rechenbar = state.serviceKeys.find((key) => findBauModell(key) || isPflegeService(key));
+    const next: Handoff = { kundentyp: state.kundentyp };
+    if (rechenbar) next.leistung = rechenbar;
+    if (state.gewerbeArt) next.art = state.gewerbeArt;
+    if (state.qm) next.qm = state.qm;
+    if (state.lfm) next.lfm = state.lfm;
+    if (state.bestand !== "unklar") next.bestand = state.bestand;
+    if (state.zugang !== "unklar") next.zugang = state.zugang;
+    if (state.hang !== "unklar") next.hang = state.hang;
+    if (state.pflegeLeistungen.length) next.pflege = state.pflegeLeistungen;
+    if (state.rasenQm) next.rasen = state.rasenQm;
+    if (state.beetQm) next.beet = state.beetQm;
+    if (state.heckeLfm) {
+      next.hecke = state.heckeLfm;
+      next.schnitte = state.heckeSchnitte;
+    }
+    next.zustand = state.zustand;
+    if (state.turnus) next.turnus = state.turnus;
+    next.entsorgung = state.entsorgung;
+    return next;
+  }, [state]);
+
+  const publishHandoff = useHandoffPublisher();
+  useEffect(() => {
+    publishHandoff(kostenHandoff);
+  }, [kostenHandoff, publishHandoff]);
 
   /* ---------------- Interaktion ---------------- */
 
@@ -565,6 +636,8 @@ export function ProjektAssistent({
       payload.planung = { stand: state.planungsstand || "idee", skizzen: state.skizzen };
       payload.budget = {
         band: state.budgetBand,
+        // Die IDs hängen jetzt an der Leistung, im Büro liest sich das Label.
+        bandLabel: budgetBands.find((band) => band.id === state.budgetBand)?.label ?? "",
         festigkeit: state.budgetFestigkeit,
         orientierung: bauKalkulation ? { low: bauKalkulation.low, high: bauKalkulation.high } : null,
         match: budgetMatch
@@ -696,13 +769,6 @@ export function ProjektAssistent({
               onChange={(event) => patch({ sonstiges: event.target.value })}
             />
           </div>
-
-          {state.serviceKeys.length && !hatBau ? (
-            <p className="mt-6 rounded-2xl border border-laub-200 bg-laub-50 px-5 py-4 text-[13px] leading-relaxed text-laub-800">
-              Alles klar, es geht um Pflege. Wir fragen deshalb nur nach Flächen, Zustand und Rhythmus — keine
-              Bauplanung, kein Budgetrahmen in Zehntausenderschritten.
-            </p>
-          ) : null}
         </div>
       ) : null}
 
@@ -1068,7 +1134,7 @@ export function ProjektAssistent({
 
           <FieldBlock label="Welcher Budgetrahmen passt für Sie?">
             <div className="grid gap-3 sm:grid-cols-2">
-              {galabau.estimator.budgetBands.map((band) => (
+              {budgetBands.map((band) => (
                 <ChoiceButton
                   key={band.id}
                   selected={state.budgetBand === band.id}
@@ -1103,7 +1169,12 @@ export function ProjektAssistent({
 
           <p className="mt-7 rounded-2xl border border-erde-200 bg-erde-50 px-5 py-4 text-[13px] leading-relaxed text-ink/70">
             Keine Vorstellung, was so etwas kostet?{" "}
-            <a href="/kosten" target="_blank" rel="noopener noreferrer" className="font-medium text-laub-700 underline">
+            <a
+              href={buildKostenHref(kostenHandoff)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-laub-700 underline"
+            >
               Im Kostenrechner
             </a>{" "}
             können Sie es in einer Minute durchspielen — mit Material, Zugang und Gelände. Ihre Eingaben hier bleiben

@@ -61,7 +61,7 @@ function summarize(body: Record<string, unknown>): string {
     const budget = body.budget as Record<string, unknown>;
     const orientierung = budget.orientierung as { low?: number; high?: number } | null;
     lines.push(
-      `Budget: ${String(budget.band || "-")} | Festigkeit: ${String(budget.festigkeit || "-")} | Match: ${String(budget.match || "-")}`
+      `Budget: ${String(budget.bandLabel || budget.band || "-")} | Festigkeit: ${String(budget.festigkeit || "-")} | Match: ${String(budget.match || "-")}`
     );
     if (orientierung) {
       lines.push(`Interne Kalkulation: ${eur(orientierung.low)} – ${eur(orientierung.high)}`);

@@ -244,7 +244,14 @@ export type ProjektAnfragePayload = {
   planung?: { stand: Planungsstand; skizzen: boolean };
   zeitrahmen: Zeitrahmen;
   fotos: Array<{ name: string; size: number; type: string; dataUrl?: string }>;
-  budget?: { band: string; festigkeit: string; orientierung: { low: number; high: number } | null; match: BudgetMatch };
+  budget?: {
+    band: string;
+    /** Beschriftung der gewählten Stufe; die IDs hängen an der Leistung. */
+    bandLabel: string;
+    festigkeit: string;
+    orientierung: { low: number; high: number } | null;
+    match: BudgetMatch;
+  };
   kontakt: {
     name: string;
     telefon: string;
@@ -277,7 +284,7 @@ export type BewerbungPayload = {
   fuehrerschein: string[];
   wohnort: string;
   startdatum: string;
-  geschlecht: string;
+  anrede: string;
   vorname: string;
   nachname: string;
   /** Vor- und Nachname zusammengesetzt, damit Mail und CRM ein Feld haben. */

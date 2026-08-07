@@ -1,4 +1,5 @@
 import { galabau } from "@/lib/galabau";
+import { buildKostenHref, presetFuerLeistung } from "@/lib/handoff";
 import { preisTabelle } from "@/lib/kalkulator";
 
 /**
@@ -42,8 +43,10 @@ export function KostenTeaser() {
             <ul className="grid gap-3">
               {zeilen.map((zeile) => (
                 <li key={zeile.key}>
+                  {/* Wer auf „Terrasse — 4.800 €“ klickt, will die Terrasse
+                      rechnen, nicht die erste Kachel im Rechner. */}
                   <a
-                    href="/kosten"
+                    href={buildKostenHref(presetFuerLeistung(zeile.key))}
                     className="flex flex-col gap-2 rounded-4xl border border-ink/10 bg-white px-7 py-6 transition-colors hover:border-laub-400 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <span>

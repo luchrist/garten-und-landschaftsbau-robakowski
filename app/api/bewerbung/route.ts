@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
     `Führerschein: ${Array.isArray(body.fuehrerschein) ? (body.fuehrerschein as string[]).join(", ") : "-"}`,
     `Wohnort: ${String(body.wohnort || "-")}`,
     `Start: ${String(body.startdatum || "-")}`,
-    `Anrede: ${String(body.geschlecht || "-")}`,
+    `Anrede: ${String(body.anrede || "-")}`,
     `Kontakt: ${String(body.name)} | ${String(body.telefon)} | ${String(body.email || "-")}`,
     `Nachricht: ${String(body.nachricht || "-")}`,
     `Lebenslauf: ${lebenslauf?.name ? lebenslauf.name : "nicht hochgeladen"}`
