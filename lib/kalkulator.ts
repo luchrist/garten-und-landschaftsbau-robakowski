@@ -1079,15 +1079,16 @@ export function berechneProjekt(input: {
  * ------------------------------------------------------------------ */
 
 /**
- * Obergrenzen der Budgetstufen, je Leistung.
+ * Obergrenzen der Budgetstufen, je Leistung — der Rückfallwert, solange keine
+ * Menge bekannt ist.
  *
  * Eine gemeinsame Leiter in Zehntausenderschritten macht die Frage für die
  * kleinen Gewerke wertlos: Ein Zaun über 30 lfm liegt bei rund 3.000 bis
  * 6.000 €, landet also fast immer in „bis 5.000 €“ — und wir erfahren nichts.
- * Umgekehrt ist „bis 5.000 €“ bei einer Gartenneugestaltung keine sinnvolle
- * Antwortmöglichkeit. Die Stufen orientieren sich deshalb an der Kalkulation
- * des jeweiligen Modells (Referenzmenge ± typische Ausreißer nach unten und
- * oben) und liegen dort eng, wo die Leistung tatsächlich stattfindet.
+ * Umgekehrt ist „bis 5.000 €“ bei einer Gartenneugestaltung selten eine
+ * sinnvolle Antwort. Die Stufen orientieren sich deshalb an der Kalkulation
+ * des jeweiligen Modells bei Referenzmenge und reichen nach unten weit genug,
+ * dass auch der kleine Auftrag eine eigene Stufe hat.
  *
  * Ohne Eintrag (etwa bei reinem „Sonstiges“) gilt die Leiter aus der Config.
  */
@@ -1097,32 +1098,97 @@ const BUDGET_STUFEN: Partial<Record<GalabauServiceKey, number[]>> = {
   bewaesserung: [2000, 4000, 8000, 15000],
   terrassenbau: [3000, 7000, 15000, 25000],
   pflasterarbeiten: [3000, 7500, 15000, 30000],
-  gartenneugestaltung: [7500, 20000, 40000, 75000],
-  gewerbeflaechen: [10000, 25000, 60000, 120000]
+  gartenneugestaltung: [5000, 12500, 30000, 60000],
+  gewerbeflaechen: [7500, 20000, 50000, 100000]
 };
+
+/** Stufen sollen wie Preisschilder aussehen, nicht wie Rechenergebnisse. */
+const RUNDE_MANTISSEN = [1, 1.5, 2, 2.5, 3, 4, 5, 7.5, 10];
+
+const BUDGET_MIN_STUFE = 500;
+
+/** Nächster „glatter“ Wert (1.500, 2.000, 2.500, 3.000, 4.000, 5.000, 7.500 …). */
+function rundeAufStufe(value: number): number {
+  if (value <= BUDGET_MIN_STUFE) return BUDGET_MIN_STUFE;
+  const dekade = Math.pow(10, Math.floor(Math.log10(value)));
+  const mantisse = value / dekade;
+  const beste = RUNDE_MANTISSEN.reduce((treffer, kandidat) =>
+    Math.abs(Math.log(kandidat / mantisse)) < Math.abs(Math.log(treffer / mantisse)) ? kandidat : treffer
+  );
+  return Math.round(beste * dekade);
+}
+
+/** Nächsthöherer glatter Wert, damit zwei Stufen nie zusammenfallen. */
+function naechsteStufe(value: number): number {
+  const dekade = Math.pow(10, Math.floor(Math.log10(value)));
+  for (const mantisse of RUNDE_MANTISSEN) {
+    const kandidat = Math.round(mantisse * dekade);
+    if (kandidat > value) return kandidat;
+  }
+  return value * 2;
+}
+
+/**
+ * Lage der Stufen relativ zur Mitte der internen Kalkulation.
+ *
+ * Die Rechnung selbst bekommt der Nutzer nicht zu sehen, sie bestimmt aber,
+ * wo die Stufen liegen: eine klar darunter, zwei um den erwarteten Wert herum,
+ * eine darüber. So ist jede Antwort informativ — bei 40 m² Terrasse genauso
+ * wie bei 800 m² Gewerbefläche — statt dass alles in derselben Stufe landet.
+ */
+const BUDGET_FAKTOREN = [0.55, 0.85, 1.25, 2];
+
+function stufenAusKalkulation(spanne: { low: number; high: number }): number[] {
+  const mitte = (spanne.low + spanne.high) / 2;
+  const stufen: number[] = [];
+  for (const faktor of BUDGET_FAKTOREN) {
+    let wert = rundeAufStufe(mitte * faktor);
+    const vorherige = stufen[stufen.length - 1];
+    if (vorherige !== undefined && wert <= vorherige) wert = naechsteStufe(vorherige);
+    stufen.push(wert);
+  }
+  return stufen;
+}
 
 function formatZahl(value: number): string {
   return new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 }).format(value);
 }
 
-/**
- * Budgetstufen für eine Auswahl von Leistungen.
- *
- * Bei mehreren Leistungen gewinnt die teuerste Leiter: Terrasse plus Zaun
- * kostet mehr als der Zaun allein, und die Stufen sind breit genug, dass die
- * Summe darin Platz hat. Eine Leiter aus addierten Schwellen wäre genauer,
- * würde aber Rahmen anbieten, die es für die Einzelleistung nie gibt.
- */
-export function budgetBandsFor(serviceKeys: string[]): GalabauBudgetBand[] {
+function budgetStufenFor(serviceKeys: string[]): number[] | null {
   const leitern = serviceKeys
     .map((key) => BUDGET_STUFEN[key as GalabauServiceKey])
     .filter((stufen): stufen is number[] => Boolean(stufen));
 
-  if (!leitern.length) return galabau.estimator.budgetBands;
+  if (!leitern.length) return null;
 
-  const stufen = leitern.reduce((weiteste, kandidat) =>
+  // Bei mehreren Leistungen gewinnt die teuerste Leiter: Terrasse plus Zaun
+  // kostet mehr als der Zaun allein, und die Stufen sind breit genug, dass die
+  // Summe darin Platz hat.
+  return leitern.reduce((weiteste, kandidat) =>
     kandidat[kandidat.length - 1] > weiteste[weiteste.length - 1] ? kandidat : weiteste
   );
+}
+
+/**
+ * Budgetstufen für die Anfrage.
+ *
+ * Sobald eine Menge eingetragen ist, kommen die Stufen aus der internen
+ * Kalkulation — dann passt die Leiter zum konkreten Projekt und nicht nur zur
+ * Leistung. Eine Gartenneugestaltung über 60 m² bekommt so andere Stufen als
+ * eine über 600 m², obwohl beide dieselbe Leistung sind. Fehlt die Menge
+ * (`roughOnly`), ist die Spanne zu breit, um daraus Stufen zu bilden; dann
+ * gilt die Leiter der Leistung.
+ */
+export function budgetBandsFor(
+  serviceKeys: string[],
+  kalkulation?: { low: number; high: number; roughOnly?: boolean } | null
+): GalabauBudgetBand[] {
+  const ausLeistung = budgetStufenFor(serviceKeys);
+  const rechenbar = Boolean(kalkulation && !kalkulation.roughOnly && kalkulation.high > 0);
+
+  if (!rechenbar && !ausLeistung) return galabau.estimator.budgetBands;
+
+  const stufen = rechenbar ? stufenAusKalkulation(kalkulation!) : ausLeistung!;
 
   const bands: GalabauBudgetBand[] = [];
   let untergrenze = 0;
@@ -1146,11 +1212,12 @@ export function budgetBandsFor(serviceKeys: string[]): GalabauBudgetBand[] {
 
 export function matchBudget(
   budgetBandId: string,
-  spanne: { low: number; high: number } | null,
+  spanne: { low: number; high: number; roughOnly?: boolean } | null,
   serviceKeys: string[] = []
 ): BudgetMatch {
   if (!spanne) return "unbekannt";
-  const band = budgetBandsFor(serviceKeys).find((entry) => entry.id === budgetBandId);
+  // Dieselbe Leiter wie im Formular, sonst findet die ID keine Stufe.
+  const band = budgetBandsFor(serviceKeys, spanne).find((entry) => entry.id === budgetBandId);
   if (!band || band.id === "unklar") return "unbekannt";
   const bandMax = band.max ?? Number.POSITIVE_INFINITY;
   if (bandMax < spanne.low) return "unter";

@@ -54,10 +54,11 @@ import { checkServiceArea, type ServiceAreaResult } from "@/lib/service-area";
  * Kalkulation trotzdem gerechnet, für Priorisierung und Budget-Abgleich im
  * Büro.
  *
- * Die Budgetstufen hängen an der gewählten Leistung (`budgetBandsFor`): ein
- * Zaun wird in Tausenderschritten abgefragt, eine Gartenneugestaltung in
- * Zehntausendern. Sonst landet jede kleine Anfrage in der untersten Stufe und
- * die Antwort sagt nichts.
+ * Die Budgetstufen kommen aus dieser internen Kalkulation (`budgetBandsFor`):
+ * eine Terrasse über 12 m² wird in Tausenderschritten abgefragt, eine
+ * Gartenneugestaltung über 900 m² in Fünfzigtausendern. Solange keine Menge
+ * eingetragen ist, gilt eine Leiter je Leistung. Sonst landet jede kleine
+ * Anfrage in der untersten Stufe und die Antwort sagt nichts.
  */
 
 type PhotoDraft = {
@@ -416,7 +417,7 @@ export function ProjektAssistent({
     state.kundentyp
   ]);
 
-  const budgetBands = useMemo(() => budgetBandsFor(bauKeys), [bauKeys]);
+  const budgetBands = useMemo(() => budgetBandsFor(bauKeys, bauKalkulation), [bauKeys, bauKalkulation]);
 
   // Wer die Leistung nachträglich wechselt, hätte sonst eine Stufe ausgewählt,
   // die es auf der neuen Leiter nicht mehr gibt: sichtbar keine Auswahl, aber
