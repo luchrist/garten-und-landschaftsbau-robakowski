@@ -3,7 +3,9 @@ import { notFound } from "next/navigation";
 
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
+import { Kostenrechner } from "@/components/Kostenrechner";
 import { galabau, findService } from "@/lib/galabau";
+import { findBauModell } from "@/lib/kalkulator";
 
 /**
  * Eine Route für alle Leistungsseiten aus Abschnitt 3 des Konzepts
@@ -109,9 +111,41 @@ export default async function LeistungsSeite({ params }: { params: Promise<{ slu
         </div>
       </section>
 
+      {/* Kostenrechner, auf diese Leistung vorbelegt */}
+      {findBauModell(service.key) || service.key === "gartenpflege" ? (
+        <section className="bg-bone py-20 md:py-28">
+          <div className="mx-auto max-w-[1400px] px-6 md:px-10">
+            <div className="grid grid-cols-12 gap-x-10 gap-y-10">
+              <div className="col-span-12 lg:col-span-4">
+                <div className="flex items-center gap-3 font-mono text-[11px] uppercase tracking-[0.22em] text-ink/55">
+                  <span className="marker" />
+                  <span>Was kostet das?</span>
+                </div>
+                <h2 className="mt-6 font-display text-[26px] leading-[1.1] tracking-tight text-ink md:text-[34px]">
+                  Rechnen Sie es durch<span className="text-erde-500">.</span>
+                </h2>
+                <p className="mt-5 max-w-[46ch] text-[15px] leading-relaxed text-ink/70">
+                  Material, Zugang und Gelände ändern den Preis erheblich. Der Rechner zeigt die Positionen einzeln,
+                  damit nachvollziehbar bleibt, wofür das Geld draufgeht.
+                </p>
+                <a
+                  href="/kosten"
+                  className="mt-6 inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.18em] text-laub-700 hover:text-laub-800"
+                >
+                  Alle Preisspannen ansehen <span>&rarr;</span>
+                </a>
+              </div>
+              <div className="col-span-12 lg:col-span-8">
+                <Kostenrechner serviceKey={service.key} />
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
       {/* FAQ */}
       {service.faq.length > 0 ? (
-        <section className="bg-bone py-20 md:py-28">
+        <section className="bg-creme py-20 md:py-28">
           <div className="mx-auto max-w-[1400px] px-6 md:px-10">
             <div className="grid grid-cols-12 gap-x-10 gap-y-10">
               <div className="col-span-12 lg:col-span-4">

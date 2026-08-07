@@ -4,15 +4,31 @@ import { useMemo, useRef, useState } from "react";
 
 import { galabau } from "@/lib/galabau";
 import {
-  estimateProject,
-  formatRange,
+  bestandFrage,
+  bestandOptionen,
+  berechnePflege,
+  berechneProjekt,
+  findBauModell,
+  HANG_OPTIONEN,
+  isHybridService,
+  isPflegeService,
   matchBudget,
-  SIZE_LABELS,
+  mengeFrage,
+  PFLEGE_LEISTUNGEN,
+  TURNUS_OPTIONEN,
+  ZUGANG_OPTIONEN,
+  ZUSTAND_OPTIONEN,
+  type Bestandslage,
   type BudgetMatch,
-  type EstimatorResult
-} from "@/lib/estimator";
+  type Hangstufe,
+  type Pflegezustand,
+  type ProjectSize,
+  type Turnus,
+  type Zugang
+} from "@/lib/kalkulator";
 import {
   scoreLead,
+  type Anfragemodus,
   type Kundentyp,
   type Planungsstand,
   type ProjektAnfragePayload,
@@ -21,11 +37,19 @@ import {
 import { checkServiceArea, type ServiceAreaResult } from "@/lib/service-area";
 
 /**
- * Der mehrstufige Projekt-Assistent aus Abschnitt 4 des Konzepts. Acht
- * Schritte: Projektart, Ort, Umfang, Planung, Zeitrahmen, Fotos, Budget,
- * Kontakt. Die Schrittfolge und die Auswertung (Einsatzgebiet-Check,
- * Budget-Orientierung, Lead-Score) sind deterministische Logik; die Factory
- * passt nur Texte und die Projektart-Optionen an den Betrieb an.
+ * Mehrstufiger Projekt-Assistent, verzweigt nach Projektart.
+ *
+ * Eine Baumaßnahme und ein Pflegeauftrag haben fast keine gemeinsamen Fragen.
+ * Wer Gartenpflege anfragt, wird deshalb nicht mehr nach Neubau oder Bestand,
+ * nach Hanglage, nach Planungsstand oder nach einem Budgetrahmen in
+ * Zehntausenderschritten gefragt — sondern nach Flächen, Zustand, Turnus und
+ * Leistungen. Wer beides anfragt, bekommt beide Blöcke.
+ *
+ * Der Budgetschritt im Bau-Funnel zeigt bewusst keine Rechnung mehr. Die
+ * ausführliche Kalkulation lebt im Kostenrechner (/kosten). Der Assistent
+ * fragt nur noch den Rahmen ab und wie belastbar er ist. Intern wird die
+ * Kalkulation trotzdem gerechnet, für Priorisierung und Budget-Abgleich im
+ * Büro.
  */
 
 type PhotoDraft = {
@@ -35,22 +59,37 @@ type PhotoDraft = {
   dataUrl: string;
 };
 
+type GewerbeArt = "bau" | "pflege" | "beides" | "";
+type BudgetFestigkeit = "fest" | "spielraum" | "unklar" | "";
+
 type AssistantState = {
   serviceKeys: string[];
+  gewerbeArt: GewerbeArt;
   sonstiges: string;
   plz: string;
   ort: string;
+  // Bau
   qm: string;
   lfm: string;
-  bestand: "neubau" | "bestand" | "unklar";
-  zugang: "gut" | "eng" | "unklar";
-  hanglage: boolean;
+  bestand: Bestandslage;
+  zugang: Zugang;
+  hang: Hangstufe;
   planungsstand: Planungsstand | "";
   skizzen: boolean;
+  // Pflege
+  pflegeLeistungen: string[];
+  rasenQm: string;
+  beetQm: string;
+  heckeLfm: string;
+  heckeSchnitte: number;
+  zustand: Pflegezustand;
+  turnus: Turnus | "";
+  entsorgung: boolean;
+  // Gemeinsam
   zeitrahmen: Zeitrahmen | "";
   fotos: PhotoDraft[];
   budgetBand: string;
-  budgetReaktion: string;
+  budgetFestigkeit: BudgetFestigkeit;
   name: string;
   telefon: string;
   email: string;
@@ -62,6 +101,7 @@ type AssistantState = {
 
 const INITIAL_STATE: AssistantState = {
   serviceKeys: [],
+  gewerbeArt: "",
   sonstiges: "",
   plz: "",
   ort: "",
@@ -69,13 +109,21 @@ const INITIAL_STATE: AssistantState = {
   lfm: "",
   bestand: "unklar",
   zugang: "unklar",
-  hanglage: false,
+  hang: "unklar",
   planungsstand: "",
   skizzen: false,
+  pflegeLeistungen: [],
+  rasenQm: "",
+  beetQm: "",
+  heckeLfm: "",
+  heckeSchnitte: 1,
+  zustand: "gepflegt",
+  turnus: "",
+  entsorgung: true,
   zeitrahmen: "",
   fotos: [],
   budgetBand: "",
-  budgetReaktion: "",
+  budgetFestigkeit: "",
   name: "",
   telefon: "",
   email: "",
@@ -85,22 +133,41 @@ const INITIAL_STATE: AssistantState = {
   einwilligung: false
 };
 
-const STEPS = [
-  "Projektart",
-  "Ort",
-  "Umfang",
-  "Planung",
-  "Zeitrahmen",
-  "Fotos",
-  "Budget",
-  "Kontakt"
-] as const;
+type StepId =
+  | "projektart"
+  | "ort"
+  | "umfang"
+  | "pflege"
+  | "planung"
+  | "zeitrahmen"
+  | "fotos"
+  | "budget"
+  | "kontakt";
 
-const ZEITRAHMEN_OPTIONS: Array<{ id: Zeitrahmen; label: string }> = [
+const STEP_TITLES: Record<StepId, string> = {
+  projektart: "Projektart",
+  ort: "Ort",
+  umfang: "Umfang",
+  pflege: "Pflegeumfang",
+  planung: "Planung",
+  zeitrahmen: "Zeitrahmen",
+  fotos: "Fotos",
+  budget: "Budget",
+  kontakt: "Kontakt"
+};
+
+const ZEITRAHMEN_BAU: Array<{ id: Zeitrahmen; label: string }> = [
   { id: "sofort", label: "So bald wie möglich" },
   { id: "1-3-monate", label: "In 1 bis 3 Monaten" },
   { id: "dieses-jahr", label: "Dieses Jahr" },
   { id: "orientierung", label: "Nur Orientierung" }
+];
+
+const ZEITRAHMEN_PFLEGE: Array<{ id: Zeitrahmen; label: string }> = [
+  { id: "sofort", label: "So bald wie möglich" },
+  { id: "1-3-monate", label: "In den nächsten Wochen" },
+  { id: "dieses-jahr", label: "Diese Saison" },
+  { id: "orientierung", label: "Nur eine Preisauskunft" }
 ];
 
 const PLANUNG_OPTIONS: Array<{ id: Planungsstand; label: string; hint: string }> = [
@@ -109,7 +176,11 @@ const PLANUNG_OPTIONS: Array<{ id: Planungsstand; label: string; hint: string }>
   { id: "beratung", label: "Beratung nötig", hint: "Ich möchte Vorschläge bekommen." }
 ];
 
-const RECURRING_SERVICE_KEYS = ["gartenpflege", "bewaesserung", "gewerbeflaechen"];
+const FESTIGKEIT_OPTIONS: Array<{ id: Exclude<BudgetFestigkeit, "">; label: string; hint: string }> = [
+  { id: "fest", label: "Fester Rahmen", hint: "Darüber geht es nicht, bitte darauf planen." },
+  { id: "spielraum", label: "Richtwert mit Spielraum", hint: "Wenn es sich lohnt, ginge auch mehr." },
+  { id: "unklar", label: "Erst einmal wissen, was realistisch ist", hint: "Bitte offen sagen, was die Sache kostet." }
+];
 
 const PHOTO_MAX_EDGE = 1600;
 
@@ -154,10 +225,10 @@ function ChoiceButton({
   children: React.ReactNode;
 }) {
   return (
-    <button type="button" className="choice" data-selected={selected} onClick={onClick}>
+    <button type="button" className="choice items-start" data-selected={selected} onClick={onClick}>
       <span
         aria-hidden="true"
-        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors ${
+        className={`mt-[2px] flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors ${
           selected ? "border-laub-500 bg-laub-500" : "border-ink/25 bg-white"
         }`}
       >
@@ -168,9 +239,39 @@ function ChoiceButton({
   );
 }
 
-export function ProjektAssistent({ variant = "page" }: { variant?: "page" | "widget" }) {
-  const [state, setState] = useState<AssistantState>(INITIAL_STATE);
-  const [step, setStep] = useState(0);
+function FieldBlock({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="mt-7 first:mt-0">
+      <span className="field-label">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+export function ProjektAssistent({
+  variant = "page",
+  initialServiceKey = "",
+  initialQm = "",
+  initialLfm = ""
+}: {
+  variant?: "page" | "widget";
+  /** Vorauswahl aus dem Kostenrechner oder einer Leistungsseite. */
+  initialServiceKey?: string;
+  initialQm?: string;
+  initialLfm?: string;
+}) {
+  const [state, setState] = useState<AssistantState>(() => {
+    const known = galabau.services.some((service) => service.key === initialServiceKey);
+    return {
+      ...INITIAL_STATE,
+      serviceKeys: known ? [initialServiceKey] : [],
+      qm: /^\d+$/.test(initialQm) ? initialQm : "",
+      lfm: /^\d+$/.test(initialLfm) ? initialLfm : "",
+      pflegeLeistungen: known && isPflegeService(initialServiceKey) ? ["rasen"] : [],
+      rasenQm: known && isPflegeService(initialServiceKey) && /^\d+$/.test(initialQm) ? initialQm : ""
+    };
+  });
+  const [stepIndex, setStepIndex] = useState(0);
   const [stepError, setStepError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -182,60 +283,167 @@ export function ProjektAssistent({ variant = "page" }: { variant?: "page" | "wid
     setStepError("");
   };
 
+  /* ---------------- Verzweigung ---------------- */
+
+  const hatGewerbe = state.serviceKeys.includes("gewerbeflaechen");
+
+  /**
+   * Leistungen, die als Baumaßnahme abgefragt werden. Solange bei den
+   * Gewerbeflächen noch nicht beantwortet ist, ob es um Bau oder Pflege geht,
+   * gilt der Bau-Ablauf — sonst würde der Schrittzähler bei der Antwort
+   * springen. Weiter kommt man ohne Antwort ohnehin nicht.
+   */
+  const bauKeys = useMemo(
+    () =>
+      state.serviceKeys.filter((key) => {
+        if (isPflegeService(key)) return false;
+        if (isHybridService(key)) return state.gewerbeArt !== "pflege";
+        return true;
+      }),
+    [state.serviceKeys, state.gewerbeArt]
+  );
+
+  const hatPflege = useMemo(
+    () =>
+      state.serviceKeys.some((key) => {
+        if (isPflegeService(key)) return true;
+        if (isHybridService(key)) return state.gewerbeArt === "pflege" || state.gewerbeArt === "beides";
+        return false;
+      }),
+    [state.serviceKeys, state.gewerbeArt]
+  );
+
+  // Ohne Leistungsauswahl (auch bei reinem "Sonstiges") gilt der Bau-Ablauf.
+  // Er ist der längere von beiden, deshalb wird der Schrittzähler beim
+  // Auswählen höchstens kürzer — und genau das erklärt der Hinweis unten.
+  const hatBau = bauKeys.length > 0 || state.serviceKeys.length === 0;
+  const modus: Anfragemodus = hatBau ? "bau" : "pflege";
+
+  const steps = useMemo<StepId[]>(() => {
+    const list: StepId[] = ["projektart", "ort"];
+    if (hatBau) list.push("umfang");
+    if (hatPflege) list.push("pflege");
+    if (hatBau) list.push("planung");
+    list.push("zeitrahmen", "fotos");
+    if (hatBau) list.push("budget");
+    list.push("kontakt");
+    return list;
+  }, [hatBau, hatPflege]);
+
+  // Wer die Projektart nachträglich wechselt, würde sonst hinter das Ende des
+  // neuen, kürzeren Ablaufs rutschen.
+  const step = Math.min(stepIndex, steps.length - 1);
+  const stepId = steps[step];
+
   const areaResult: ServiceAreaResult | null = useMemo(
     () => (state.plz.trim().length === 5 ? checkServiceArea(state.plz) : null),
     [state.plz]
   );
 
-  const needsQm = useMemo(
-    () => galabau.services.some((service) => state.serviceKeys.includes(service.key) && service.unit === "qm"),
-    [state.serviceKeys]
-  );
-  const needsLfm = useMemo(
-    () => galabau.services.some((service) => state.serviceKeys.includes(service.key) && service.unit === "lfm"),
-    [state.serviceKeys]
-  );
+  const needsQm = useMemo(() => bauKeys.some((key) => findBauModell(key)?.unit === "qm"), [bauKeys]);
+  const needsLfm = useMemo(() => bauKeys.some((key) => findBauModell(key)?.unit === "lfm"), [bauKeys]);
+  const zeigeQm = needsQm || (!needsQm && !needsLfm);
 
-  const estimate: EstimatorResult | null = useMemo(() => {
-    if (!state.serviceKeys.length) return null;
-    return estimateProject({
-      serviceKeys: state.serviceKeys,
+  const qmFrage = useMemo(() => mengeFrage(bauKeys, "qm"), [bauKeys]);
+  const lfmFrage = useMemo(() => mengeFrage(bauKeys, "lfm"), [bauKeys]);
+  const bestandOptions = useMemo(() => bestandOptionen(bauKeys), [bauKeys]);
+  const bestandLabel = useMemo(() => bestandFrage(bauKeys), [bauKeys]);
+
+  /* ---------------- Interne Kalkulation (nicht sichtbar) ---------------- */
+
+  const bauKalkulation = useMemo(() => {
+    if (!hatBau) return null;
+    return berechneProjekt({
+      serviceKeys: bauKeys,
       qm: Number(state.qm) > 0 ? Number(state.qm) : undefined,
       lfm: Number(state.lfm) > 0 ? Number(state.lfm) : undefined,
-      hanglage: state.hanglage,
-      schwererZugang: state.zugang === "eng",
-      rueckbauBestand: state.bestand === "bestand"
+      bestand: state.bestand,
+      zugang: state.zugang,
+      hang: state.hang
     });
-  }, [state.serviceKeys, state.qm, state.lfm, state.hanglage, state.zugang, state.bestand]);
+  }, [hatBau, bauKeys, state.qm, state.lfm, state.bestand, state.zugang, state.hang]);
+
+  const pflegeKalkulation = useMemo(() => {
+    if (!hatPflege || !state.turnus) return null;
+    return berechnePflege({
+      leistungen: state.pflegeLeistungen,
+      rasenQm: Number(state.rasenQm) || undefined,
+      beetQm: Number(state.beetQm) || undefined,
+      heckeLfm: Number(state.heckeLfm) || undefined,
+      heckeSchnitteProJahr: state.heckeSchnitte,
+      zustand: state.zustand,
+      turnus: state.turnus,
+      entsorgung: state.entsorgung,
+      gewerblich: state.kundentyp === "gewerblich"
+    });
+  }, [
+    hatPflege,
+    state.pflegeLeistungen,
+    state.rasenQm,
+    state.beetQm,
+    state.heckeLfm,
+    state.heckeSchnitte,
+    state.zustand,
+    state.turnus,
+    state.entsorgung,
+    state.kundentyp
+  ]);
 
   const budgetMatch: BudgetMatch = useMemo(() => {
-    if (!estimate || !state.budgetBand) return "unbekannt";
-    return matchBudget(state.budgetBand, estimate);
-  }, [estimate, state.budgetBand]);
+    if (!bauKalkulation || !state.budgetBand) return "unbekannt";
+    return matchBudget(state.budgetBand, bauKalkulation);
+  }, [bauKalkulation, state.budgetBand]);
+
+  const projektGroesse: ProjectSize = bauKalkulation?.size ?? pflegeKalkulation?.size ?? "klein";
+
+  /* ---------------- Interaktion ---------------- */
 
   function toggleService(key: string) {
+    setState((current) => {
+      const drin = current.serviceKeys.includes(key);
+      const serviceKeys = drin
+        ? current.serviceKeys.filter((existing) => existing !== key)
+        : [...current.serviceKeys, key];
+      return {
+        ...current,
+        serviceKeys,
+        gewerbeArt: serviceKeys.includes("gewerbeflaechen") ? current.gewerbeArt : ""
+      };
+    });
+    setStepError("");
+  }
+
+  function togglePflegeLeistung(id: string) {
     setState((current) => ({
       ...current,
-      serviceKeys: current.serviceKeys.includes(key)
-        ? current.serviceKeys.filter((existing) => existing !== key)
-        : [...current.serviceKeys, key]
+      pflegeLeistungen: current.pflegeLeistungen.includes(id)
+        ? current.pflegeLeistungen.filter((existing) => existing !== id)
+        : [...current.pflegeLeistungen, id]
     }));
     setStepError("");
   }
 
-  function validateStep(index: number): string {
-    switch (index) {
-      case 0:
-        return state.serviceKeys.length || state.sonstiges.trim()
-          ? ""
-          : "Bitte mindestens eine Projektart auswählen.";
-      case 1:
+  function validateStep(id: StepId): string {
+    switch (id) {
+      case "projektart":
+        if (!state.serviceKeys.length && !state.sonstiges.trim()) {
+          return "Bitte mindestens eine Projektart auswählen.";
+        }
+        if (hatGewerbe && !state.gewerbeArt) {
+          return "Bitte angeben, ob es um den Bau der Außenanlage oder um die laufende Pflege geht.";
+        }
+        return "";
+      case "ort":
         return state.plz.trim().length === 5 ? "" : "Bitte eine fünfstellige Postleitzahl eingeben.";
-      case 4:
+      case "pflege":
+        if (!state.pflegeLeistungen.length) return "Bitte mindestens eine Pflegeleistung auswählen.";
+        if (!state.turnus) return "Bitte angeben, wie oft wir kommen sollen.";
+        return "";
+      case "zeitrahmen":
         return state.zeitrahmen ? "" : "Bitte einen Zeitrahmen auswählen.";
-      case 6:
+      case "budget":
         return state.budgetBand ? "" : "Bitte einen Budgetrahmen auswählen (auch „Noch unklar“ ist eine Antwort).";
-      case 7: {
+      case "kontakt": {
         if (!state.name.trim()) return "Bitte Ihren Namen eintragen.";
         if (!state.telefon.trim() && !state.email.trim()) {
           return "Bitte Telefonnummer oder E-Mail angeben, sonst können wir uns nicht melden.";
@@ -249,17 +457,17 @@ export function ProjektAssistent({ variant = "page" }: { variant?: "page" | "wid
   }
 
   function goNext() {
-    const error = validateStep(step);
+    const error = validateStep(stepId);
     if (error) {
       setStepError(error);
       return;
     }
-    setStep((current) => Math.min(current + 1, STEPS.length - 1));
+    setStepIndex(Math.min(step + 1, steps.length - 1));
   }
 
   function goBack() {
     setStepError("");
-    setStep((current) => Math.max(current - 1, 0));
+    setStepIndex(Math.max(step - 1, 0));
   }
 
   async function onFilesSelected(fileList: FileList | null) {
@@ -288,7 +496,7 @@ export function ProjektAssistent({ variant = "page" }: { variant?: "page" | "wid
   }
 
   async function submit() {
-    const error = validateStep(7);
+    const error = validateStep("kontakt");
     if (error) {
       setStepError(error);
       return;
@@ -299,42 +507,40 @@ export function ProjektAssistent({ variant = "page" }: { variant?: "page" | "wid
 
     const selectedLabels = galabau.services
       .filter((service) => state.serviceKeys.includes(service.key))
-      .map((service) => service.label);
+      .map((service) => {
+        if (service.key === "gewerbeflaechen" && state.gewerbeArt) {
+          const zusatz =
+            state.gewerbeArt === "bau" ? "Neubau/Umbau" : state.gewerbeArt === "pflege" ? "Unterhaltspflege" : "Bau und Pflege";
+          return `${service.label} (${zusatz})`;
+        }
+        return service.label;
+      });
     if (state.sonstiges.trim()) selectedLabels.push(`Sonstiges: ${state.sonstiges.trim()}`);
 
     const score = scoreLead({
+      modus,
       serviceArea: areaResult?.verdict ?? "unknown",
       servicesMatch: state.serviceKeys.length > 0,
-      size: estimate?.size ?? "klein",
+      size: projektGroesse,
       budgetMatch,
       photoCount: state.fotos.length,
       zeitrahmen: state.zeitrahmen || undefined,
-      planungsstand: state.planungsstand || undefined,
+      planungsstand: hatBau ? state.planungsstand || undefined : undefined,
+      turnus: state.turnus || undefined,
       kundentyp: state.kundentyp,
-      wiederkehrend: state.serviceKeys.some((key) => RECURRING_SERVICE_KEYS.includes(key))
+      // Wiederkehrendes Potenzial: laufende Pflege oder Bewässerungswartung.
+      // Gewerbeflächen zählen nur mit, wenn tatsächlich Pflege gewünscht ist.
+      wiederkehrend: hatPflege || state.serviceKeys.includes("bewaesserung")
     });
 
     const payload: ProjektAnfragePayload = {
       quelle: variant === "widget" ? "widget" : "website",
       stage: "neue_anfrage",
+      modus,
       projektarten: selectedLabels,
       ort: { plz: state.plz.trim(), ort: state.ort.trim(), einsatzgebiet: areaResult?.verdict ?? "unknown" },
-      umfang: {
-        qm: Number(state.qm) > 0 ? Number(state.qm) : undefined,
-        lfm: Number(state.lfm) > 0 ? Number(state.lfm) : undefined,
-        bestand: state.bestand,
-        zugang: state.zugang,
-        hanglage: state.hanglage
-      },
-      planung: { stand: state.planungsstand || "idee", skizzen: state.skizzen },
       zeitrahmen: state.zeitrahmen || "orientierung",
       fotos: state.fotos,
-      budget: {
-        band: state.budgetBand,
-        reaktion: state.budgetReaktion,
-        orientierung: estimate ? { low: estimate.low, high: estimate.high } : null,
-        match: budgetMatch
-      },
       kontakt: {
         name: state.name.trim(),
         telefon: state.telefon.trim(),
@@ -348,6 +554,44 @@ export function ProjektAssistent({ variant = "page" }: { variant?: "page" | "wid
       eingegangenAm: new Date().toISOString()
     };
 
+    if (hatBau) {
+      payload.umfang = {
+        qm: Number(state.qm) > 0 ? Number(state.qm) : undefined,
+        lfm: Number(state.lfm) > 0 ? Number(state.lfm) : undefined,
+        bestand: state.bestand,
+        zugang: state.zugang,
+        hang: state.hang
+      };
+      payload.planung = { stand: state.planungsstand || "idee", skizzen: state.skizzen };
+      payload.budget = {
+        band: state.budgetBand,
+        festigkeit: state.budgetFestigkeit,
+        orientierung: bauKalkulation ? { low: bauKalkulation.low, high: bauKalkulation.high } : null,
+        match: budgetMatch
+      };
+    }
+
+    if (hatPflege) {
+      payload.pflege = {
+        leistungen: state.pflegeLeistungen,
+        rasenQm: Number(state.rasenQm) > 0 ? Number(state.rasenQm) : undefined,
+        beetQm: Number(state.beetQm) > 0 ? Number(state.beetQm) : undefined,
+        heckeLfm: Number(state.heckeLfm) > 0 ? Number(state.heckeLfm) : undefined,
+        heckeSchnitteProJahr: state.heckeSchnitte,
+        zustand: state.zustand,
+        turnus: state.turnus || "zweiwoechentlich",
+        entsorgung: state.entsorgung,
+        orientierung: pflegeKalkulation
+          ? {
+              proEinsatzLow: pflegeKalkulation.regelEinsatz.low,
+              proEinsatzHigh: pflegeKalkulation.regelEinsatz.high,
+              jahrLow: pflegeKalkulation.jahrLow,
+              jahrHigh: pflegeKalkulation.jahrHigh
+            }
+          : null
+      };
+    }
+
     try {
       const response = await fetch("/api/projekt-anfrage", {
         method: "POST",
@@ -357,7 +601,9 @@ export function ProjektAssistent({ variant = "page" }: { variant?: "page" | "wid
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       setSubmitted(true);
     } catch {
-      setSubmitError("Die Anfrage konnte gerade nicht übertragen werden. Bitte rufen Sie uns an oder versuchen Sie es gleich noch einmal.");
+      setSubmitError(
+        "Die Anfrage konnte gerade nicht übertragen werden. Bitte rufen Sie uns an oder versuchen Sie es gleich noch einmal."
+      );
     } finally {
       setSubmitting(false);
     }
@@ -377,17 +623,16 @@ export function ProjektAssistent({ variant = "page" }: { variant?: "page" | "wid
           {galabau.assistant.responsePromise} Sie erhalten außerdem eine kurze Bestätigung mit der Zusammenfassung
           Ihrer Angaben{state.email.trim() ? " per E-Mail" : ""}.
         </p>
-        {estimate && !estimate.roughOnly ? (
-          <p className="mt-4 max-w-[56ch] text-[13px] leading-relaxed text-ink/55">
-            Zur Erinnerung: Der genannte Rahmen von {formatRange(estimate)} ist eine unverbindliche Orientierung.
-            Den verbindlichen Preis nennen wir nach dem Aufmaß vor Ort.
-          </p>
-        ) : null}
+        <p className="mt-4 max-w-[56ch] text-[13px] leading-relaxed text-ink/55">
+          {modus === "pflege"
+            ? "Für den Pflegepreis schauen wir uns die Fläche einmal an oder werten Ihre Fotos aus. Danach steht der Preis je Einsatz fest."
+            : "Den verbindlichen Preis nennen wir nach dem Aufmaß vor Ort. Bis dahin bleibt jede Zahl eine Orientierung."}
+        </p>
       </div>
     );
   }
 
-  const progress = ((step + 1) / STEPS.length) * 100;
+  const progress = ((step + 1) / steps.length) * 100;
 
   return (
     <div className="rounded-4xl border border-ink/10 bg-white p-6 shadow-[0_20px_60px_rgba(20,24,26,0.06)] md:p-10">
@@ -395,21 +640,19 @@ export function ProjektAssistent({ variant = "page" }: { variant?: "page" | "wid
       <div className="mb-8">
         <div className="flex items-baseline justify-between gap-4">
           <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-ink/50">
-            Schritt {step + 1} von {STEPS.length}
+            Schritt {step + 1} von {steps.length}
           </span>
-          <span className="font-display text-[18px] tracking-tight text-ink md:text-[20px]">{STEPS[step]}</span>
+          <span className="font-display text-[18px] tracking-tight text-ink md:text-[20px]">{STEP_TITLES[stepId]}</span>
         </div>
         <div className="mt-3 h-1 overflow-hidden rounded-full bg-ink/8">
           <div className="h-full rounded-full bg-laub-500 transition-all duration-500" style={{ width: `${progress}%` }} />
         </div>
       </div>
 
-      {/* Step 1: Projektart */}
-      {step === 0 ? (
+      {/* Projektart */}
+      {stepId === "projektart" ? (
         <div>
-          <p className="text-[15px] leading-relaxed text-ink/70">
-            Worum geht es? Mehrfachauswahl ist möglich.
-          </p>
+          <p className="text-[15px] leading-relaxed text-ink/70">Worum geht es? Mehrfachauswahl ist möglich.</p>
           <div className="mt-6 grid gap-3 sm:grid-cols-2">
             {galabau.services.map((service) => (
               <ChoiceButton
@@ -421,7 +664,27 @@ export function ProjektAssistent({ variant = "page" }: { variant?: "page" | "wid
               </ChoiceButton>
             ))}
           </div>
-          <div className="mt-4">
+
+          {hatGewerbe ? (
+            <FieldBlock label="Gewerbliche Außenanlage: Bau oder Pflege?">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <ChoiceButton selected={state.gewerbeArt === "bau"} onClick={() => patch({ gewerbeArt: "bau" })}>
+                  <span className="block font-medium">Neubau oder Umbau</span>
+                  <span className="block text-[13px] text-ink/55">Die Fläche wird hergestellt oder umgebaut.</span>
+                </ChoiceButton>
+                <ChoiceButton selected={state.gewerbeArt === "pflege"} onClick={() => patch({ gewerbeArt: "pflege" })}>
+                  <span className="block font-medium">Unterhaltspflege</span>
+                  <span className="block text-[13px] text-ink/55">Laufende Pflege im Turnus, ggf. Winterdienst.</span>
+                </ChoiceButton>
+                <ChoiceButton selected={state.gewerbeArt === "beides"} onClick={() => patch({ gewerbeArt: "beides" })}>
+                  <span className="block font-medium">Beides</span>
+                  <span className="block text-[13px] text-ink/55">Erst herstellen, danach im Vertrag pflegen.</span>
+                </ChoiceButton>
+              </div>
+            </FieldBlock>
+          ) : null}
+
+          <div className="mt-7">
             <label htmlFor="assistent-sonstiges" className="field-label">
               Sonstiges (optional)
             </label>
@@ -433,11 +696,18 @@ export function ProjektAssistent({ variant = "page" }: { variant?: "page" | "wid
               onChange={(event) => patch({ sonstiges: event.target.value })}
             />
           </div>
+
+          {state.serviceKeys.length && !hatBau ? (
+            <p className="mt-6 rounded-2xl border border-laub-200 bg-laub-50 px-5 py-4 text-[13px] leading-relaxed text-laub-800">
+              Alles klar, es geht um Pflege. Wir fragen deshalb nur nach Flächen, Zustand und Rhythmus — keine
+              Bauplanung, kein Budgetrahmen in Zehntausenderschritten.
+            </p>
+          ) : null}
         </div>
       ) : null}
 
-      {/* Step 2: Ort & Einsatzgebiet */}
-      {step === 1 ? (
+      {/* Ort */}
+      {stepId === "ort" ? (
         <div>
           <p className="text-[15px] leading-relaxed text-ink/70">
             Wo liegt das Projekt? Wir prüfen sofort, ob es in unserem Einsatzgebiet liegt.
@@ -490,85 +760,216 @@ export function ProjektAssistent({ variant = "page" }: { variant?: "page" | "wid
         </div>
       ) : null}
 
-      {/* Step 3: Fläche & Umfang */}
-      {step === 2 ? (
+      {/* Umfang (nur Bau) */}
+      {stepId === "umfang" ? (
         <div>
           <p className="text-[15px] leading-relaxed text-ink/70">
             Grobe Zahlen reichen völlig. Sie helfen uns, das Projekt richtig einzuordnen.
           </p>
+
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
-            {needsQm || !needsLfm ? (
+            {zeigeQm ? (
               <div>
                 <label htmlFor="assistent-qm" className="field-label">
-                  Fläche (m², geschätzt)
+                  {qmFrage.label}
                 </label>
                 <input
                   id="assistent-qm"
                   inputMode="numeric"
                   className="field-input"
-                  placeholder="z.B. 120"
+                  placeholder={qmFrage.placeholder}
                   value={state.qm}
                   onChange={(event) => patch({ qm: event.target.value.replace(/[^\d]/g, "") })}
                 />
+                <p className="mt-2 text-[12px] leading-relaxed text-ink/50">{qmFrage.hint}</p>
               </div>
             ) : null}
             {needsLfm ? (
               <div>
                 <label htmlFor="assistent-lfm" className="field-label">
-                  Laufende Meter (Zaun/Sichtschutz)
+                  {lfmFrage.label}
                 </label>
                 <input
                   id="assistent-lfm"
                   inputMode="numeric"
                   className="field-input"
-                  placeholder="z.B. 25"
+                  placeholder={lfmFrage.placeholder}
                   value={state.lfm}
                   onChange={(event) => patch({ lfm: event.target.value.replace(/[^\d]/g, "") })}
                 />
+                <p className="mt-2 text-[12px] leading-relaxed text-ink/50">{lfmFrage.hint}</p>
               </div>
             ) : null}
           </div>
 
-          <div className="mt-6">
-            <span className="field-label">Bestand oder Neubau?</span>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <ChoiceButton selected={state.bestand === "neubau"} onClick={() => patch({ bestand: "neubau" })}>
-                Neubau / freie Fläche
-              </ChoiceButton>
-              <ChoiceButton selected={state.bestand === "bestand"} onClick={() => patch({ bestand: "bestand" })}>
-                Bestand muss weichen
-              </ChoiceButton>
-              <ChoiceButton selected={state.bestand === "unklar"} onClick={() => patch({ bestand: "unklar" })}>
-                Noch unklar
-              </ChoiceButton>
+          <FieldBlock label={bestandLabel}>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {bestandOptions.map((option) => (
+                <ChoiceButton
+                  key={option.id}
+                  selected={state.bestand === option.id}
+                  onClick={() => patch({ bestand: option.id })}
+                >
+                  {option.label}
+                </ChoiceButton>
+              ))}
             </div>
-          </div>
+          </FieldBlock>
 
-          <div className="mt-6">
-            <span className="field-label">Zugang zur Baustelle</span>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <ChoiceButton selected={state.zugang === "gut"} onClick={() => patch({ zugang: "gut" })}>
-                Gut erreichbar (Maschinen kommen hin)
-              </ChoiceButton>
-              <ChoiceButton selected={state.zugang === "eng"} onClick={() => patch({ zugang: "eng" })}>
-                Eng / nur durchs Haus
-              </ChoiceButton>
-              <ChoiceButton selected={state.zugang === "unklar"} onClick={() => patch({ zugang: "unklar" })}>
-                Weiß ich nicht
-              </ChoiceButton>
+          <FieldBlock label="Zugang zur Baustelle">
+            <div className="grid gap-3 sm:grid-cols-2">
+              {ZUGANG_OPTIONEN.map((option) => (
+                <ChoiceButton
+                  key={option.id}
+                  selected={state.zugang === option.id}
+                  onClick={() => patch({ zugang: option.id })}
+                >
+                  <span className="block font-medium">{option.label}</span>
+                  <span className="block text-[13px] text-ink/55">{option.hint}</span>
+                </ChoiceButton>
+              ))}
             </div>
-          </div>
+          </FieldBlock>
 
-          <div className="mt-6">
-            <ChoiceButton selected={state.hanglage} onClick={() => patch({ hanglage: !state.hanglage })}>
-              Das Grundstück liegt am Hang
+          <FieldBlock label="Gelände">
+            <div className="grid gap-3 sm:grid-cols-2">
+              {HANG_OPTIONEN.map((option) => (
+                <ChoiceButton key={option.id} selected={state.hang === option.id} onClick={() => patch({ hang: option.id })}>
+                  <span className="block font-medium">{option.label}</span>
+                  <span className="block text-[13px] text-ink/55">{option.hint}</span>
+                </ChoiceButton>
+              ))}
+            </div>
+          </FieldBlock>
+        </div>
+      ) : null}
+
+      {/* Pflegeumfang (nur Pflege) */}
+      {stepId === "pflege" ? (
+        <div>
+          <p className="text-[15px] leading-relaxed text-ink/70">
+            Was sollen wir übernehmen? Die Flächenfelder erscheinen passend zur Auswahl.
+          </p>
+
+          <FieldBlock label="Leistungen">
+            <div className="grid gap-3 sm:grid-cols-2">
+              {PFLEGE_LEISTUNGEN.map((leistung) => (
+                <ChoiceButton
+                  key={leistung.id}
+                  selected={state.pflegeLeistungen.includes(leistung.id)}
+                  onClick={() => togglePflegeLeistung(leistung.id)}
+                >
+                  {leistung.label}
+                </ChoiceButton>
+              ))}
+            </div>
+          </FieldBlock>
+
+          {state.pflegeLeistungen.some((id) => ["rasen", "beet", "hecke", "vertikutieren"].includes(id)) ? (
+            <FieldBlock label="Grobe Größen">
+              <div className="grid gap-4 sm:grid-cols-3">
+                {state.pflegeLeistungen.includes("rasen") || state.pflegeLeistungen.includes("vertikutieren") ? (
+                  <div>
+                    <label htmlFor="pflege-rasen" className="text-[13px] text-ink/70">
+                      Rasenfläche (m²)
+                    </label>
+                    <input
+                      id="pflege-rasen"
+                      inputMode="numeric"
+                      className="field-input mt-1"
+                      placeholder="z.B. 250"
+                      value={state.rasenQm}
+                      onChange={(event) => patch({ rasenQm: event.target.value.replace(/[^\d]/g, "") })}
+                    />
+                  </div>
+                ) : null}
+                {state.pflegeLeistungen.includes("hecke") ? (
+                  <div>
+                    <label htmlFor="pflege-hecke" className="text-[13px] text-ink/70">
+                      Heckenlänge (lfm)
+                    </label>
+                    <input
+                      id="pflege-hecke"
+                      inputMode="numeric"
+                      className="field-input mt-1"
+                      placeholder="z.B. 30"
+                      value={state.heckeLfm}
+                      onChange={(event) => patch({ heckeLfm: event.target.value.replace(/[^\d]/g, "") })}
+                    />
+                  </div>
+                ) : null}
+                {state.pflegeLeistungen.includes("beet") ? (
+                  <div>
+                    <label htmlFor="pflege-beet" className="text-[13px] text-ink/70">
+                      Beetfläche (m²)
+                    </label>
+                    <input
+                      id="pflege-beet"
+                      inputMode="numeric"
+                      className="field-input mt-1"
+                      placeholder="z.B. 40"
+                      value={state.beetQm}
+                      onChange={(event) => patch({ beetQm: event.target.value.replace(/[^\d]/g, "") })}
+                    />
+                  </div>
+                ) : null}
+              </div>
+              {state.pflegeLeistungen.includes("hecke") ? (
+                <div className="mt-4">
+                  <span className="text-[13px] text-ink/70">Wie oft soll die Hecke geschnitten werden?</span>
+                  <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                    <ChoiceButton selected={state.heckeSchnitte === 1} onClick={() => patch({ heckeSchnitte: 1 })}>
+                      Einmal im Jahr
+                    </ChoiceButton>
+                    <ChoiceButton selected={state.heckeSchnitte === 2} onClick={() => patch({ heckeSchnitte: 2 })}>
+                      Zweimal im Jahr
+                    </ChoiceButton>
+                  </div>
+                </div>
+              ) : null}
+            </FieldBlock>
+          ) : null}
+
+          <FieldBlock label="Wie ist der Zustand heute?">
+            <div className="grid gap-3 sm:grid-cols-3">
+              {ZUSTAND_OPTIONEN.map((option) => (
+                <ChoiceButton
+                  key={option.id}
+                  selected={state.zustand === option.id}
+                  onClick={() => patch({ zustand: option.id })}
+                >
+                  <span className="block font-medium">{option.label}</span>
+                  <span className="block text-[13px] text-ink/55">{option.hint}</span>
+                </ChoiceButton>
+              ))}
+            </div>
+          </FieldBlock>
+
+          <FieldBlock label="Wie oft sollen wir kommen?">
+            <div className="grid gap-3 sm:grid-cols-2">
+              {TURNUS_OPTIONEN.map((option) => (
+                <ChoiceButton
+                  key={option.id}
+                  selected={state.turnus === option.id}
+                  onClick={() => patch({ turnus: option.id })}
+                >
+                  <span className="block font-medium">{option.label}</span>
+                  <span className="block text-[13px] text-ink/55">{option.hint}</span>
+                </ChoiceButton>
+              ))}
+            </div>
+          </FieldBlock>
+
+          <div className="mt-7">
+            <ChoiceButton selected={state.entsorgung} onClick={() => patch({ entsorgung: !state.entsorgung })}>
+              Schnittgut und Grünabfall bitte abfahren und entsorgen
             </ChoiceButton>
           </div>
         </div>
       ) : null}
 
-      {/* Step 4: Planung & Zustand */}
-      {step === 3 ? (
+      {/* Planung (nur Bau) */}
+      {stepId === "planung" ? (
         <div>
           <p className="text-[15px] leading-relaxed text-ink/70">Wie weit sind Sie mit der Planung?</p>
           <div className="mt-6 grid gap-3">
@@ -591,12 +992,14 @@ export function ProjektAssistent({ variant = "page" }: { variant?: "page" | "wid
         </div>
       ) : null}
 
-      {/* Step 5: Zeitrahmen */}
-      {step === 4 ? (
+      {/* Zeitrahmen */}
+      {stepId === "zeitrahmen" ? (
         <div>
-          <p className="text-[15px] leading-relaxed text-ink/70">Wann soll es losgehen?</p>
+          <p className="text-[15px] leading-relaxed text-ink/70">
+            {modus === "pflege" ? "Ab wann sollen wir die Pflege übernehmen?" : "Wann soll es losgehen?"}
+          </p>
           <div className="mt-6 grid gap-3 sm:grid-cols-2">
-            {ZEITRAHMEN_OPTIONS.map((option) => (
+            {(modus === "pflege" ? ZEITRAHMEN_PFLEGE : ZEITRAHMEN_BAU).map((option) => (
               <ChoiceButton
                 key={option.id}
                 selected={state.zeitrahmen === option.id}
@@ -609,12 +1012,13 @@ export function ProjektAssistent({ variant = "page" }: { variant?: "page" | "wid
         </div>
       ) : null}
 
-      {/* Step 6: Foto-Upload */}
-      {step === 5 ? (
+      {/* Fotos */}
+      {stepId === "fotos" ? (
         <div>
           <p className="text-[15px] leading-relaxed text-ink/70">
-            Fotos vom Garten, der Zufahrt, dem aktuellen Zustand oder von Skizzen und Inspirationsbildern.
-            Optional, aber sie sparen meist eine ganze Runde Rückfragen.
+            {modus === "pflege"
+              ? "Fotos von Rasen, Hecke und Beeten. Damit sehen wir den Aufwand und können den Preis je Einsatz oft ohne Ortstermin nennen."
+              : "Fotos vom Garten, der Zufahrt, dem aktuellen Zustand oder von Skizzen und Inspirationsbildern. Optional, aber sie sparen meist eine ganze Runde Rückfragen."}
           </p>
           <input
             ref={fileInputRef}
@@ -654,62 +1058,62 @@ export function ProjektAssistent({ variant = "page" }: { variant?: "page" | "wid
         </div>
       ) : null}
 
-      {/* Step 7: Budget & Preisgefühl */}
-      {step === 6 ? (
+      {/* Budget (nur Bau, ohne Rechnung) */}
+      {stepId === "budget" ? (
         <div>
-          {estimate && !estimate.roughOnly ? (
-            <div className="rounded-2xl border border-erde-300 bg-erde-50 px-5 py-4">
-              <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-erde-700">
-                Grobe Orientierung ({SIZE_LABELS[estimate.size]})
-              </span>
-              <p className="mt-1 font-display text-[24px] tracking-tight text-ink md:text-[28px]">
-                {formatRange(estimate)}
-              </p>
-              <p className="mt-2 text-[12px] leading-relaxed text-ink/60">{estimate.disclaimer}</p>
-            </div>
-          ) : (
-            <p className="text-[15px] leading-relaxed text-ink/70">
-              Für eine Orientierungsspanne fehlen uns noch Flächenangaben, das ist aber kein Problem.
-              Wählen Sie einfach den Rahmen, der für Sie realistisch wäre.
-            </p>
-          )}
+          <p className="text-[15px] leading-relaxed text-ink/70">
+            Damit wir gleich in der richtigen Größenordnung planen: In welchem Rahmen soll sich das Projekt bewegen?
+            Wir rechnen Ihnen hier nichts vor, wir richten uns danach.
+          </p>
 
-          <div className="mt-6">
-            <span className="field-label">Welcher Budgetrahmen passt für Sie?</span>
+          <FieldBlock label="Welcher Budgetrahmen passt für Sie?">
             <div className="grid gap-3 sm:grid-cols-2">
               {galabau.estimator.budgetBands.map((band) => (
                 <ChoiceButton
                   key={band.id}
                   selected={state.budgetBand === band.id}
-                  onClick={() => patch({ budgetBand: band.id })}
+                  // Bei "Noch unklar" verschwindet die Folgefrage, also darf
+                  // auch keine alte Antwort darauf mitgeschickt werden.
+                  onClick={() =>
+                    patch({ budgetBand: band.id, budgetFestigkeit: band.id === "unklar" ? "" : state.budgetFestigkeit })
+                  }
                 >
                   {band.label}
                 </ChoiceButton>
               ))}
             </div>
-          </div>
+          </FieldBlock>
 
-          {estimate && !estimate.roughOnly ? (
-            <div className="mt-6">
-              <span className="field-label">{galabau.estimator.realismQuestion}</span>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {galabau.estimator.realismOptions.map((option) => (
+          {state.budgetBand && state.budgetBand !== "unklar" ? (
+            <FieldBlock label="Wie fest ist dieser Rahmen?">
+              <div className="grid gap-3">
+                {FESTIGKEIT_OPTIONS.map((option) => (
                   <ChoiceButton
                     key={option.id}
-                    selected={state.budgetReaktion === option.id}
-                    onClick={() => patch({ budgetReaktion: option.id })}
+                    selected={state.budgetFestigkeit === option.id}
+                    onClick={() => patch({ budgetFestigkeit: option.id })}
                   >
-                    {option.label}
+                    <span className="block font-medium">{option.label}</span>
+                    <span className="block text-[13px] text-ink/55">{option.hint}</span>
                   </ChoiceButton>
                 ))}
               </div>
-            </div>
+            </FieldBlock>
           ) : null}
+
+          <p className="mt-7 rounded-2xl border border-erde-200 bg-erde-50 px-5 py-4 text-[13px] leading-relaxed text-ink/70">
+            Keine Vorstellung, was so etwas kostet?{" "}
+            <a href="/kosten" target="_blank" rel="noopener noreferrer" className="font-medium text-laub-700 underline">
+              Im Kostenrechner
+            </a>{" "}
+            können Sie es in einer Minute durchspielen — mit Material, Zugang und Gelände. Ihre Eingaben hier bleiben
+            erhalten.
+          </p>
         </div>
       ) : null}
 
-      {/* Step 8: Kontakt */}
-      {step === 7 ? (
+      {/* Kontakt */}
+      {stepId === "kontakt" ? (
         <div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
@@ -752,8 +1156,7 @@ export function ProjektAssistent({ variant = "page" }: { variant?: "page" | "wid
             </div>
           </div>
 
-          <div className="mt-6">
-            <span className="field-label">Wie dürfen wir uns melden?</span>
+          <FieldBlock label="Wie dürfen wir uns melden?">
             <div className="grid gap-3 sm:grid-cols-3">
               <ChoiceButton selected={state.kanal === "telefon"} onClick={() => patch({ kanal: "telefon" })}>
                 Anruf
@@ -765,10 +1168,9 @@ export function ProjektAssistent({ variant = "page" }: { variant?: "page" | "wid
                 E-Mail
               </ChoiceButton>
             </div>
-          </div>
+          </FieldBlock>
 
-          <div className="mt-6">
-            <span className="field-label">Privat oder gewerblich?</span>
+          <FieldBlock label="Privat oder gewerblich?">
             <div className="grid gap-3 sm:grid-cols-2">
               <ChoiceButton selected={state.kundentyp === "privat"} onClick={() => patch({ kundentyp: "privat" })}>
                 Privat
@@ -777,9 +1179,9 @@ export function ProjektAssistent({ variant = "page" }: { variant?: "page" | "wid
                 Gewerblich / Verwaltung
               </ChoiceButton>
             </div>
-          </div>
+          </FieldBlock>
 
-          <div className="mt-6">
+          <div className="mt-7">
             <label htmlFor="assistent-nachricht" className="field-label">
               Noch etwas, das wir wissen sollten? (optional)
             </label>
@@ -824,7 +1226,7 @@ export function ProjektAssistent({ variant = "page" }: { variant?: "page" | "wid
         >
           Zurück
         </button>
-        {step < STEPS.length - 1 ? (
+        {step < steps.length - 1 ? (
           <button
             type="button"
             onClick={goNext}

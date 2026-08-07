@@ -6,7 +6,8 @@
  *   <div data-galabau-widget="projektanfrage"></div>
  *   <script src="https://IHRE-DOMAIN.de/embed.js" defer></script>
  *
- * Verfügbare Widgets: "projektanfrage", "budget-check", "recruiting".
+ * Verfügbare Widgets: "projektanfrage", "kostenrechner", "recruiting".
+ * ("budget-check" bleibt als Alias auf den Kostenrechner bestehen.)
  * Optional: data-base="https://IHRE-DOMAIN.de", wenn das Script von einer
  * anderen Quelle geladen wird als die Widget-Seiten.
  *
@@ -16,7 +17,7 @@
 (function () {
   "use strict";
 
-  var WIDGETS = { projektanfrage: 1, "budget-check": 1, recruiting: 1 };
+  var WIDGETS = { projektanfrage: 1, kostenrechner: 1, "budget-check": 1, recruiting: 1 };
 
   function scriptOrigin() {
     var current = document.currentScript;

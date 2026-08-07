@@ -5,15 +5,16 @@ import { WidgetChrome } from "@/components/WidgetChrome";
 import company from "@/config/company";
 
 export const metadata: Metadata = {
-  title: `Budget-Check | ${company.name}`,
+  title: `Kostenrechner | ${company.name}`,
   robots: { index: false }
 };
 
 /**
- * Alter Budget-Check-Pfad. Der Check ist im Kostenrechner aufgegangen, die
- * Route bleibt bestehen, damit bereits eingebettete iframes weiterlaufen.
+ * Kostenrechner als iframe-einbettbares Widget — für Betriebe, die ihre
+ * bestehende Website behalten, und für Platzierungen auf Unterseiten, an
+ * denen die Preisfrage ohnehin aufkommt.
  */
-export default function WidgetBudgetCheckPage() {
+export default function WidgetKostenrechnerPage() {
   return (
     <WidgetChrome>
       <Kostenrechner />

@@ -1,4 +1,12 @@
-import type { BudgetMatch, ProjectSize } from "@/lib/estimator";
+import type {
+  Bestandslage,
+  BudgetMatch,
+  Hangstufe,
+  Pflegezustand,
+  ProjectSize,
+  Turnus,
+  Zugang
+} from "@/lib/kalkulator";
 import type { ServiceAreaVerdict } from "@/lib/service-area";
 
 /**
@@ -42,7 +50,20 @@ export type Zeitrahmen = "sofort" | "1-3-monate" | "dieses-jahr" | "orientierung
 export type Planungsstand = "konkret" | "idee" | "beratung";
 export type Kundentyp = "privat" | "gewerblich";
 
+/**
+ * Der Assistent verzweigt nach der Projektart. Eine Baumaßnahme und ein
+ * Pflegeauftrag haben fast keine gemeinsamen Fragen, deshalb trennt der
+ * Modus beide Funnel bis in Payload und Scoring hinein.
+ */
+export type Anfragemodus = "bau" | "pflege";
+
 export type LeadScoreInput = {
+  /**
+   * Welcher Funnel gelaufen ist. Pflegeanfragen durchlaufen weder den
+   * Planungs- noch den Budgetschritt, dürfen dafür aber auch nicht dafür
+   * bestraft werden, dass diese Angaben fehlen.
+   */
+  modus: Anfragemodus;
   serviceArea: ServiceAreaVerdict;
   /** Whether every selected Projektart maps to a service the company offers. */
   servicesMatch: boolean;
@@ -52,6 +73,8 @@ export type LeadScoreInput = {
   zeitrahmen?: Zeitrahmen;
   planungsstand?: Planungsstand;
   kundentyp?: Kundentyp;
+  /** Turnus der Pflege — im Pflegemodus der stärkste Werttreiber. */
+  turnus?: Turnus;
   /** Pflege, Bewässerungswartung, Winterdienst: recurring revenue potential. */
   wiederkehrend: boolean;
 };
@@ -100,6 +123,19 @@ const PLANUNG_POINTS: Record<Planungsstand, number> = {
 };
 
 /**
+ * Im Pflegemodus ersetzt der Turnus die Budget- und Planungsfrage: ein fester
+ * Rhythmus ist über die Saison mehr wert als ein einmaliger Einsatz, auch
+ * wenn die Einzelsumme kleiner ist.
+ */
+const TURNUS_POINTS: Record<Turnus, number> = {
+  woechentlich: 30,
+  zweiwoechentlich: 28,
+  monatlich: 22,
+  saisonal: 16,
+  einmalig: 8
+};
+
+/**
  * Section 7: Einsatzgebiet, Leistung passt, Projektgröße, Budget-Match, Fotos
  * vorhanden, gewünschter Zeitraum, Entscheidungsreife, Privat/Gewerbe,
  * wiederkehrendes Potenzial.
@@ -122,10 +158,18 @@ export function scoreLead(input: LeadScoreInput): LeadScore {
   }
 
   value += SIZE_POINTS[input.size];
-  value += BUDGET_POINTS[input.budgetMatch];
-  if (input.budgetMatch === "unter") reasons.push("Budget unter dem Orientierungsrahmen");
-  if (input.budgetMatch === "passend") reasons.push("Budget passt zum Rahmen");
-  if (input.budgetMatch === "unbekannt") missing.push("Budgetrahmen");
+
+  if (input.modus === "bau") {
+    value += BUDGET_POINTS[input.budgetMatch];
+    if (input.budgetMatch === "unter") reasons.push("Budget unter dem Orientierungsrahmen");
+    if (input.budgetMatch === "passend") reasons.push("Budget passt zum Rahmen");
+    if (input.budgetMatch === "unbekannt") missing.push("Budgetrahmen");
+  } else if (input.turnus) {
+    value += TURNUS_POINTS[input.turnus];
+    if (input.turnus !== "einmalig") reasons.push(`Fester Turnus: ${input.turnus}`);
+  } else {
+    missing.push("Turnus");
+  }
 
   if (input.photoCount > 0) {
     value += Math.min(10, 4 + input.photoCount * 2);
@@ -140,11 +184,15 @@ export function scoreLead(input: LeadScoreInput): LeadScore {
     missing.push("Zeitrahmen");
   }
 
-  if (input.planungsstand) {
-    value += PLANUNG_POINTS[input.planungsstand];
-    if (input.planungsstand === "beratung") reasons.push("Beratungsbedarf");
-  } else {
-    missing.push("Planungsstand");
+  // Der Planungsstand wird nur im Bau-Funnel erhoben. Bei Pflege gibt es
+  // nichts zu planen, deshalb taucht er dort auch nicht als Lücke auf.
+  if (input.modus === "bau") {
+    if (input.planungsstand) {
+      value += PLANUNG_POINTS[input.planungsstand];
+      if (input.planungsstand === "beratung") reasons.push("Beratungsbedarf");
+    } else {
+      missing.push("Planungsstand");
+    }
   }
 
   if (input.kundentyp === "gewerblich") {
@@ -163,23 +211,40 @@ export function scoreLead(input: LeadScoreInput): LeadScore {
   return { value: clamped, label, reasons, missing };
 }
 
-/** Payload the Projekt-Assistent posts to /api/projekt-anfrage. */
+/**
+ * Payload the Projekt-Assistent posts to /api/projekt-anfrage.
+ *
+ * `umfang`, `planung` und `budget` gibt es nur im Bau-Funnel, `pflege` nur im
+ * Pflege-Funnel. Bei einer Kombination aus beidem sind beide Blöcke gesetzt.
+ */
 export type ProjektAnfragePayload = {
   quelle: "website" | "widget";
   stage: LeadStage;
+  modus: Anfragemodus;
   projektarten: string[];
   ort: { plz: string; ort: string; einsatzgebiet: ServiceAreaVerdict };
-  umfang: {
+  umfang?: {
     qm?: number;
     lfm?: number;
-    bestand: "neubau" | "bestand" | "unklar";
-    zugang: "gut" | "eng" | "unklar";
-    hanglage: boolean;
+    bestand: Bestandslage;
+    zugang: Zugang;
+    hang: Hangstufe;
   };
-  planung: { stand: Planungsstand; skizzen: boolean };
+  pflege?: {
+    leistungen: string[];
+    rasenQm?: number;
+    beetQm?: number;
+    heckeLfm?: number;
+    heckeSchnitteProJahr?: number;
+    zustand: Pflegezustand;
+    turnus: Turnus;
+    entsorgung: boolean;
+    orientierung: { proEinsatzLow: number; proEinsatzHigh: number; jahrLow: number; jahrHigh: number } | null;
+  };
+  planung?: { stand: Planungsstand; skizzen: boolean };
   zeitrahmen: Zeitrahmen;
   fotos: Array<{ name: string; size: number; type: string; dataUrl?: string }>;
-  budget: { band: string; reaktion: string; orientierung: { low: number; high: number } | null; match: BudgetMatch };
+  budget?: { band: string; festigkeit: string; orientierung: { low: number; high: number } | null; match: BudgetMatch };
   kontakt: {
     name: string;
     telefon: string;
@@ -193,18 +258,34 @@ export type ProjektAnfragePayload = {
   eingegangenAm: string;
 };
 
+/** Optionaler Lebenslauf-Upload, als Data-URL im JSON-Payload. */
+export type BewerbungAnhang = {
+  name: string;
+  size: number;
+  type: string;
+  dataUrl: string;
+};
+
 /** Payload the 60-second application posts to /api/bewerbung. */
 export type BewerbungPayload = {
   quelle: "website" | "widget";
   taetigkeit: string;
+  /** Ausbildung, anderes Gewerk oder Quereinstieg. */
   erfahrung: string;
+  /** Jahre Praxis in genau dieser Tätigkeit. */
+  berufsjahre: string;
   fuehrerschein: string[];
   wohnort: string;
   startdatum: string;
+  geschlecht: string;
+  vorname: string;
+  nachname: string;
+  /** Vor- und Nachname zusammengesetzt, damit Mail und CRM ein Feld haben. */
   name: string;
   telefon: string;
   email: string;
   nachricht: string;
+  lebenslauf: BewerbungAnhang | null;
   einwilligung: boolean;
   eingegangenAm: string;
 };

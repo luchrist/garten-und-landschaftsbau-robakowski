@@ -19,26 +19,92 @@ type IncomingFoto = { name?: string; size?: number; type?: string; dataUrl?: str
 
 const MAX_BODY_BYTES = 40 * 1024 * 1024;
 
+function eur(value: unknown): string {
+  const n = Number(value);
+  return Number.isFinite(n) ? new Intl.NumberFormat("de-DE").format(n) + " €" : "-";
+}
+
+/**
+ * Die Zusammenfassung folgt dem Modus der Anfrage: Bauprojekte bringen
+ * Umfang, Planung und Budget mit, Pflegeanfragen stattdessen Flächen, Turnus
+ * und Leistungen. Ein gemeinsames Schema für beides würde in der Mail nur
+ * halbleere Zeilen erzeugen.
+ */
 function summarize(body: Record<string, unknown>): string {
   const kontakt = (body.kontakt || {}) as Record<string, unknown>;
   const ort = (body.ort || {}) as Record<string, unknown>;
-  const budget = (body.budget || {}) as Record<string, unknown>;
   const score = (body.score || {}) as Record<string, unknown>;
   const fotos = Array.isArray(body.fotos) ? (body.fotos as IncomingFoto[]) : [];
+  const modus = String(body.modus || "bau");
 
   const lines = [
-    `Neue Projektanfrage (${String(body.quelle || "website")})`,
+    `Neue Projektanfrage (${String(body.quelle || "website")}) — Modus: ${modus}`,
     `Projektarten: ${Array.isArray(body.projektarten) ? (body.projektarten as string[]).join(", ") : "-"}`,
     `Ort: ${String(ort.plz || "-")} ${String(ort.ort || "")} (${String(ort.einsatzgebiet || "unknown")})`,
-    `Zeitrahmen: ${String(body.zeitrahmen || "-")}`,
-    `Budget: ${String(budget.band || "-")} | Match: ${String(budget.match || "-")} | Reaktion: ${String(budget.reaktion || "-")}`,
+    `Zeitrahmen: ${String(body.zeitrahmen || "-")}`
+  ];
+
+  if (body.umfang) {
+    const umfang = body.umfang as Record<string, unknown>;
+    lines.push(
+      `Umfang: ${umfang.qm ? `${umfang.qm} m²` : ""}${umfang.lfm ? ` ${umfang.lfm} lfm` : ""}`.trim() +
+        ` | Bestand: ${String(umfang.bestand || "-")} | Zugang: ${String(umfang.zugang || "-")} | Gelände: ${String(umfang.hang || "-")}`
+    );
+  }
+
+  if (body.planung) {
+    const planung = body.planung as Record<string, unknown>;
+    lines.push(`Planung: ${String(planung.stand || "-")}${planung.skizzen ? " (Skizzen vorhanden)" : ""}`);
+  }
+
+  if (body.budget) {
+    const budget = body.budget as Record<string, unknown>;
+    const orientierung = budget.orientierung as { low?: number; high?: number } | null;
+    lines.push(
+      `Budget: ${String(budget.band || "-")} | Festigkeit: ${String(budget.festigkeit || "-")} | Match: ${String(budget.match || "-")}`
+    );
+    if (orientierung) {
+      lines.push(`Interne Kalkulation: ${eur(orientierung.low)} – ${eur(orientierung.high)}`);
+    }
+  }
+
+  if (body.pflege) {
+    const pflege = body.pflege as Record<string, unknown>;
+    const orientierung = pflege.orientierung as
+      | { proEinsatzLow?: number; proEinsatzHigh?: number; jahrLow?: number; jahrHigh?: number }
+      | null;
+    lines.push(
+      `Pflege: Turnus ${String(pflege.turnus || "-")} | Zustand ${String(pflege.zustand || "-")} | Entsorgung ${pflege.entsorgung ? "ja" : "nein"}`
+    );
+    lines.push(
+      `Flächen: ${pflege.rasenQm ? `${pflege.rasenQm} m² Rasen` : "Rasen -"}, ${pflege.heckeLfm ? `${pflege.heckeLfm} lfm Hecke × ${pflege.heckeSchnitteProJahr ?? 1}/Jahr` : "Hecke -"}, ${pflege.beetQm ? `${pflege.beetQm} m² Beete` : "Beete -"}`
+    );
+    lines.push(
+      `Leistungen: ${Array.isArray(pflege.leistungen) ? (pflege.leistungen as string[]).join(", ") : "-"}`
+    );
+    if (orientierung) {
+      lines.push(
+        `Interne Kalkulation: ${eur(orientierung.proEinsatzLow)} – ${eur(orientierung.proEinsatzHigh)} je Einsatz, ${eur(orientierung.jahrLow)} – ${eur(orientierung.jahrHigh)} pro Jahr`
+      );
+    }
+  }
+
+  lines.push(
     `Fotos: ${fotos.length}`,
     `Score: ${String(score.value ?? "-")} (${String(score.label ?? "-")})`,
-    `Kontakt: ${String(kontakt.name || "-")} | ${String(kontakt.telefon || "-")} | ${String(kontakt.email || "-")} | Kanal: ${String(kontakt.kanal || "-")}`
-  ];
+    `Kontakt: ${String(kontakt.name || "-")} | ${String(kontakt.telefon || "-")} | ${String(kontakt.email || "-")} | Kanal: ${String(kontakt.kanal || "-")} | ${String(kontakt.kundentyp || "-")}`
+  );
+
+  const reasons = Array.isArray(score.reasons) ? (score.reasons as string[]) : [];
+  if (reasons.length) {
+    lines.push(`Bewertung: ${reasons.join(", ")}`);
+  }
   const missing = Array.isArray(score.missing) ? (score.missing as string[]) : [];
   if (missing.length) {
     lines.push(`Fehlende Angaben: ${missing.join(", ")}`);
+  }
+  if (String(kontakt.nachricht || "").trim()) {
+    lines.push(`Nachricht: ${String(kontakt.nachricht)}`);
   }
   return lines.join("\n");
 }

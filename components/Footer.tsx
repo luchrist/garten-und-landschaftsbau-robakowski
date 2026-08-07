@@ -47,6 +47,12 @@ export function Footer() {
               >
                 Projekt anfragen &rarr;
               </a>
+              <a
+                href="/kosten"
+                className="mt-2 block font-mono text-[12px] uppercase tracking-[0.16em] text-ink/60 hover:text-ink"
+              >
+                Kostenrechner
+              </a>
               {galabau.recruiting.enabled ? (
                 <a
                   href="/karriere"

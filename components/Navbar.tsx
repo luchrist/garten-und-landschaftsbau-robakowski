@@ -7,6 +7,7 @@ import { galabau } from "@/lib/galabau";
 
 const SECTION_LINKS = [
   { href: "/#leistungen", label: "Leistungen" },
+  { href: "/kosten", label: "Kosten" },
   { href: "/#referenzen", label: "Referenzen" },
   { href: "/#einsatzgebiet", label: "Einsatzgebiet" },
   { href: "/#stimmen", label: "Bewertungen" }

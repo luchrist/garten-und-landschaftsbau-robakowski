@@ -24,15 +24,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Einwilligung fehlt." }, { status: 400 });
   }
 
+  const lebenslauf = (body.lebenslauf ?? null) as { name?: string; type?: string; dataUrl?: string } | null;
+
   const summary = [
     `Neue Bewerbung (${String(body.quelle || "website")})`,
     `Tätigkeit: ${String(body.taetigkeit || "-")}`,
-    `Erfahrung: ${String(body.erfahrung || "-")}`,
+    `Hintergrund: ${String(body.erfahrung || "-")}`,
+    `Praxis in dieser Tätigkeit: ${String(body.berufsjahre || "-")}`,
     `Führerschein: ${Array.isArray(body.fuehrerschein) ? (body.fuehrerschein as string[]).join(", ") : "-"}`,
     `Wohnort: ${String(body.wohnort || "-")}`,
     `Start: ${String(body.startdatum || "-")}`,
+    `Anrede: ${String(body.geschlecht || "-")}`,
     `Kontakt: ${String(body.name)} | ${String(body.telefon)} | ${String(body.email || "-")}`,
-    `Nachricht: ${String(body.nachricht || "-")}`
+    `Nachricht: ${String(body.nachricht || "-")}`,
+    `Lebenslauf: ${lebenslauf?.name ? lebenslauf.name : "nicht hochgeladen"}`
   ].join("\n");
 
   console.log("[bewerbung]\n" + summary);
@@ -53,7 +58,18 @@ export async function POST(req: NextRequest) {
           from,
           to: [to],
           subject: `Neue Bewerbung: ${String(body.name)}`,
-          text: summary
+          text: summary,
+          // Der Lebenslauf kommt als Data-URL an; Resend will reines Base64.
+          ...(lebenslauf?.dataUrl
+            ? {
+                attachments: [
+                  {
+                    filename: lebenslauf.name || "lebenslauf",
+                    content: lebenslauf.dataUrl.split(",")[1] ?? ""
+                  }
+                ]
+              }
+            : {})
         })
       });
       forwarded = response.ok;

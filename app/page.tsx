@@ -3,6 +3,7 @@ import { Hero } from "@/components/Hero";
 import { Leistungen } from "@/components/Leistungen";
 import { Referenzen } from "@/components/Referenzen";
 import { Arbeitsweise } from "@/components/Arbeitsweise";
+import { KostenTeaser } from "@/components/KostenTeaser";
 import { Reviews } from "@/components/Reviews";
 import { Einsatzgebiet } from "@/components/Einsatzgebiet";
 import { Galerie } from "@/components/Galerie";
@@ -18,6 +19,7 @@ export default function Page() {
       <Leistungen />
       <Referenzen />
       <Arbeitsweise />
+      <KostenTeaser />
       <Einsatzgebiet />
       <Reviews />
       <Galerie />
