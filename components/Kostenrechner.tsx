@@ -13,6 +13,7 @@ import {
   formatEur,
   formatSpanne,
   HANG_OPTIONEN,
+  HECKE_SCHNITT_OPTIONEN,
   PFLEGE_LEISTUNGEN,
   TURNUS_OPTIONEN,
   ZUGANG_OPTIONEN,
@@ -515,23 +516,23 @@ export function Kostenrechner({ initial = {}, compact = false }: Props) {
             <div className="mt-5">
               <span className="field-label">Heckenschnitte pro Jahr</span>
               <div className="grid gap-2 sm:grid-cols-2">
-                {[1, 2].map((anzahl) => (
+                {HECKE_SCHNITT_OPTIONEN.map((option) => (
                   <button
-                    key={anzahl}
+                    key={option.anzahl}
                     type="button"
                     className="choice"
-                    data-selected={heckeSchnitte === anzahl}
-                    onClick={() => setHeckeSchnitte(anzahl)}
+                    data-selected={heckeSchnitte === option.anzahl}
+                    onClick={() => setHeckeSchnitte(option.anzahl)}
                   >
                     <span
                       aria-hidden="true"
                       className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors ${
-                        heckeSchnitte === anzahl ? "border-laub-500 bg-laub-500" : "border-ink/25 bg-white"
+                        heckeSchnitte === option.anzahl ? "border-laub-500 bg-laub-500" : "border-ink/25 bg-white"
                       }`}
                     >
-                      {heckeSchnitte === anzahl ? <span className="h-2 w-2 rounded-full bg-bone" /> : null}
+                      {heckeSchnitte === option.anzahl ? <span className="h-2 w-2 rounded-full bg-bone" /> : null}
                     </span>
-                    <span>{anzahl === 1 ? "Einmal im Jahr" : "Zweimal im Jahr"}</span>
+                    <span>{option.label}</span>
                   </button>
                 ))}
               </div>

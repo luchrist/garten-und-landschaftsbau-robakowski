@@ -28,7 +28,14 @@ export type Hangstufe = "eben" | "leicht" | "stark" | "unklar";
 export type Bestandslage = "frei" | "gruen-rueckbau" | "belag-rueckbau" | "unklar";
 
 export type Pflegezustand = "gepflegt" | "ueberwachsen" | "verwildert";
-export type Turnus = "einmalig" | "woechentlich" | "zweiwoechentlich" | "monatlich" | "saisonal";
+export type Turnus =
+  | "einmalig"
+  | "woechentlich"
+  | "zweiwoechentlich"
+  | "dreiwoechentlich"
+  | "monatlich"
+  | "sechswoechentlich"
+  | "saisonal";
 
 /* ------------------------------------------------------------------ *
  * Zuordnung Leistung → Modus
@@ -777,11 +784,17 @@ export const PFLEGE_LEISTUNGEN = [
 
 export type PflegeLeistungId = (typeof PFLEGE_LEISTUNGEN)[number]["id"];
 
+// Der Abstand zwischen den Stufen bleibt bewusst gleichmäßig: zwischen "alle
+// zwei Wochen" und "monatlich" liegt ein ganzer Rhythmus, und wer nur alle paar
+// Monate jemanden im Garten haben will, findet zwischen monatlich und "ein paar
+// Mal im Jahr" sonst nichts Passendes.
 export const TURNUS_OPTIONEN: Array<{ id: Turnus; label: string; hint: string; einsaetze: number }> = [
   { id: "einmalig", label: "Einmaliger Einsatz", hint: "Der Garten soll einmal auf Stand gebracht werden.", einsaetze: 1 },
   { id: "woechentlich", label: "Wöchentlich", hint: "Rasen immer kurz, in der Saison rund 26 Einsätze.", einsaetze: 26 },
   { id: "zweiwoechentlich", label: "Alle zwei Wochen", hint: "Der übliche Rhythmus für Hausgärten, rund 14 Einsätze.", einsaetze: 14 },
+  { id: "dreiwoechentlich", label: "Alle drei Wochen", hint: "Etwas ruhiger, rund 10 Einsätze in der Saison.", einsaetze: 10 },
   { id: "monatlich", label: "Monatlich", hint: "Rund 8 Einsätze von März bis Oktober.", einsaetze: 8 },
+  { id: "sechswoechentlich", label: "Alle sechs Wochen", hint: "Nur das Nötigste, rund 6 Einsätze im Jahr.", einsaetze: 6 },
   { id: "saisonal", label: "Ein paar Mal im Jahr", hint: "Frühjahr, Sommer, Herbst — rund 4 Einsätze.", einsaetze: 4 }
 ];
 
@@ -803,6 +816,32 @@ const PFLEGE_SAETZE = {
   winterProJahr: { low: 240, high: 900 },
   entsorgungProEinsatz: { low: 12, high: 30 }
 };
+
+export const HECKE_SCHNITTE_MAX = 4;
+
+// Zwei Schnitte sind der Normalfall, drei und vier gehören zur akkurat
+// gehaltenen Formhecke — die gibt es oft genug, um sie anbieten zu müssen.
+export const HECKE_SCHNITT_OPTIONEN: Array<{ anzahl: number; label: string; hint: string }> = [
+  { anzahl: 1, label: "Einmal im Jahr", hint: "Ein Schnitt reicht, die Hecke darf wachsen." },
+  { anzahl: 2, label: "Zweimal im Jahr", hint: "Der Normalfall: Juni und Spätsommer." },
+  { anzahl: 3, label: "Dreimal im Jahr", hint: "Für Hecken, die immer in Form sein sollen." },
+  { anzahl: 4, label: "Viermal im Jahr", hint: "Akkurate Formhecke, durchgehend auf Kante." }
+];
+
+/**
+ * Der zweite und jeder weitere Heckenschnitt kostet weniger als der erste: die
+ * Hecke steht dann schon in Form, es wächst weniger nach und es fällt weniger
+ * Schnittgut an. Wer die Hecke wirklich akkurat mag, zahlt für vier Schnitte
+ * deshalb nicht das Vierfache.
+ */
+const HECKE_SCHNITT_FAKTOR: Record<number, number> = { 1: 1, 2: 1.9, 3: 2.7, 4: 3.4 };
+
+/**
+ * Anteil der Abfuhr an den saisonalen Grünschnitt-Positionen. Die Sätze für
+ * Hecke, Gehölz und Laub enthalten die Entsorgung; wer das Schnittgut selbst
+ * behält, zahlt sie nicht.
+ */
+const ENTSORGUNG_ANTEIL_SAISONAL = 0.15;
 
 export type PflegeInput = {
   leistungen: string[];
@@ -844,7 +883,10 @@ export function berechnePflege(input: PflegeInput): PflegeErgebnis {
   const rasenQm = Number(input.rasenQm) > 0 ? Number(input.rasenQm) : 0;
   const beetQm = Number(input.beetQm) > 0 ? Number(input.beetQm) : 0;
   const heckeLfm = Number(input.heckeLfm) > 0 ? Number(input.heckeLfm) : 0;
-  const heckeSchnitte = Math.max(1, Math.min(3, input.heckeSchnitteProJahr ?? 1));
+  const heckeSchnitte = Math.max(1, Math.min(HECKE_SCHNITTE_MAX, Math.round(input.heckeSchnitteProJahr ?? 1)));
+  const entsorgungAktiv = input.entsorgung !== false;
+  // Ohne Abfuhr bleibt das Schnittgut vor Ort, die Entsorgung fällt aus dem Satz.
+  const entsorgungFaktor = entsorgungAktiv ? 1 : 1 - ENTSORGUNG_ANTEIL_SAISONAL;
 
   // Nur Rasen, Beete und Wildkraut laufen im Turnus mit. Wer ausschließlich
   // Heckenschnitt, Laub oder Winterdienst bestellt, hat keine regelmäßigen
@@ -866,7 +908,7 @@ export function berechnePflege(input: PflegeInput): PflegeErgebnis {
     einsatzLow += PFLEGE_SAETZE.wildkrautProEinsatz.low;
     einsatzHigh += PFLEGE_SAETZE.wildkrautProEinsatz.high;
   }
-  if (hatTurnusLeistung && input.entsorgung !== false) {
+  if (hatTurnusLeistung && entsorgungAktiv) {
     einsatzLow += PFLEGE_SAETZE.entsorgungProEinsatz.low;
     einsatzHigh += PFLEGE_SAETZE.entsorgungProEinsatz.high;
   }
@@ -914,26 +956,28 @@ export function berechnePflege(input: PflegeInput): PflegeErgebnis {
   }
 
   // Saisonale Positionen laufen nicht im Turnus mit, sondern ein- bis zweimal im Jahr.
+  const entsorgungHinweis = entsorgungAktiv ? "inkl. Entsorgung" : "ohne Abfuhr";
   if (leistungen.has("hecke") && heckeLfm > 0) {
-    const low = heckeLfm * PFLEGE_SAETZE.heckeProLfm.low * heckeSchnitte * gewerbeFaktor;
-    const high = heckeLfm * PFLEGE_SAETZE.heckeProLfm.high * heckeSchnitte * gewerbeFaktor;
+    const schnittFaktor = HECKE_SCHNITT_FAKTOR[heckeSchnitte] ?? heckeSchnitte;
+    const low = heckeLfm * PFLEGE_SAETZE.heckeProLfm.low * schnittFaktor * gewerbeFaktor * entsorgungFaktor;
+    const high = heckeLfm * PFLEGE_SAETZE.heckeProLfm.high * schnittFaktor * gewerbeFaktor * entsorgungFaktor;
     jahrLow += low;
     jahrHigh += high;
-    pushPosition("hecke", `Heckenschnitt, ${heckeLfm} lfm × ${heckeSchnitte}/Jahr, inkl. Entsorgung`, low, high);
+    pushPosition("hecke", `Heckenschnitt, ${heckeLfm} lfm × ${heckeSchnitte}/Jahr, ${entsorgungHinweis}`, low, high);
   }
   if (leistungen.has("gehoelz")) {
-    const low = PFLEGE_SAETZE.gehoelzProEinsatz.low * gewerbeFaktor;
-    const high = PFLEGE_SAETZE.gehoelzProEinsatz.high * 2 * gewerbeFaktor;
+    const low = PFLEGE_SAETZE.gehoelzProEinsatz.low * gewerbeFaktor * entsorgungFaktor;
+    const high = PFLEGE_SAETZE.gehoelzProEinsatz.high * 2 * gewerbeFaktor * entsorgungFaktor;
     jahrLow += low;
     jahrHigh += high;
-    pushPosition("gehoelz", "Strauch- und Gehölzschnitt", low, high);
+    pushPosition("gehoelz", `Strauch- und Gehölzschnitt, ${entsorgungHinweis}`, low, high);
   }
   if (leistungen.has("laub")) {
-    const low = PFLEGE_SAETZE.laubProJahr.low * gewerbeFaktor;
-    const high = PFLEGE_SAETZE.laubProJahr.high * gewerbeFaktor;
+    const low = PFLEGE_SAETZE.laubProJahr.low * gewerbeFaktor * entsorgungFaktor;
+    const high = PFLEGE_SAETZE.laubProJahr.high * gewerbeFaktor * entsorgungFaktor;
     jahrLow += low;
     jahrHigh += high;
-    pushPosition("laub", "Laubentfernung im Herbst", low, high);
+    pushPosition("laub", `Laubentfernung im Herbst, ${entsorgungHinweis}`, low, high);
   }
   if (leistungen.has("vertikutieren") && rasenQm > 0) {
     const low = rasenQm * PFLEGE_SAETZE.vertikutierenProQm.low * gewerbeFaktor;
@@ -964,6 +1008,12 @@ export function berechnePflege(input: PflegeInput): PflegeErgebnis {
   ];
   if (leistungen.has("hecke")) {
     hinweise.push("Radikale Heckenrückschnitte sind vom 1. März bis 30. September gesetzlich nicht zulässig, Formschnitt dagegen schon.");
+    if (heckeSchnitte >= 3) {
+      hinweise.push("Ab dem dritten Schnitt geht es um Formschnitt an einer Hecke, die bereits in Form steht. Die zusätzlichen Termine sind deshalb günstiger als der erste.");
+    }
+  }
+  if (!entsorgungAktiv) {
+    hinweise.push("Ohne Abfuhr bleibt das Schnittgut vor Ort, auf dem Kompost oder in einem Container, den Sie stellen. Das ist in den Preisen bereits berücksichtigt.");
   }
   if (hatTurnusLeistung && zustandEintrag.faktor > 1) {
     hinweise.unshift("Der Ersteinsatz ist teurer als die Folgetermine, weil der Rückstand aufgeholt und mehr Material abgefahren wird.");
@@ -972,7 +1022,7 @@ export function berechnePflege(input: PflegeInput): PflegeErgebnis {
     hinweise.push("Bei festem Turnus nennen wir auf Wunsch einen Jahresbetrag in gleichen monatlichen Raten.");
   }
   if (!hatTurnusLeistung) {
-    hinweise.push("Ihre Auswahl enthält nur saisonale Arbeiten. Die fallen ein- bis zweimal im Jahr an, deshalb entfällt hier der Turnus.");
+    hinweise.push("Ihre Auswahl enthält nur saisonale Arbeiten. Die haben ihre eigenen Termine im Jahreslauf, deshalb entfällt hier der Turnus.");
   }
 
   const mitte = (jahr.low + jahr.high) / 2;

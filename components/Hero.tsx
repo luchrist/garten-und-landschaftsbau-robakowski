@@ -131,7 +131,9 @@ export function Hero() {
               {galabau.claim}
             </h1>
 
-            <p className="mt-5 max-w-[46ch] text-[15px] leading-relaxed text-bone/85 drop-shadow-md md:text-[17px]">
+            {/* Auf dem Handy bleibt neben Claim und Buttons kein Platz fuer die
+                Subline, ohne dass der Hero gedraengt wirkt. */}
+            <p className="mt-5 hidden max-w-[46ch] text-[15px] leading-relaxed text-bone/85 drop-shadow-md md:block md:text-[17px]">
               {galabau.heroSubline}
             </p>
 
@@ -149,12 +151,12 @@ export function Hero() {
                   rel="noopener noreferrer"
                   className="inline-flex items-center justify-center gap-2 rounded-full border border-bone/45 bg-bone/5 px-7 py-4 text-[14px] font-medium tracking-wide text-bone backdrop-blur-sm transition-colors hover:bg-bone/15 active:scale-[0.98]"
                 >
-                  Kurze Frage per WhatsApp
+                  Per WhatsApp fragen
                 </a>
               ) : null}
             </div>
 
-            <p className="mt-5 font-mono text-[11px] uppercase tracking-[0.18em] text-bone/60">
+            <p className="mt-5 hidden font-mono text-[11px] uppercase tracking-[0.18em] text-bone/60 md:block">
               {galabau.assistant.responsePromise}
             </p>
           </div>

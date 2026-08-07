@@ -31,7 +31,7 @@ export function WhatsappFloat() {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      aria-label="Kurze Frage per WhatsApp stellen"
+      aria-label="Per WhatsApp fragen"
       className={`fixed bottom-5 right-5 z-50 flex h-14 w-14 items-center justify-center rounded-full shadow-lg transition-all duration-300 hover:scale-105 active:scale-95 md:bottom-8 md:right-8 md:h-16 md:w-16 ${
         visible ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-4 opacity-0"
       }`}

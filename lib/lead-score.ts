@@ -130,7 +130,9 @@ const PLANUNG_POINTS: Record<Planungsstand, number> = {
 const TURNUS_POINTS: Record<Turnus, number> = {
   woechentlich: 30,
   zweiwoechentlich: 28,
+  dreiwoechentlich: 25,
   monatlich: 22,
+  sechswoechentlich: 19,
   saisonal: 16,
   einmalig: 8
 };

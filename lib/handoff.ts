@@ -4,6 +4,7 @@ import {
   isHybridService,
   isPflegeService,
   HANG_OPTIONEN,
+  HECKE_SCHNITTE_MAX,
   PFLEGE_LEISTUNGEN,
   TURNUS_OPTIONEN,
   ZUGANG_OPTIONEN,
@@ -198,8 +199,8 @@ export function parseHandoff(raw: Record<string, string | string[] | undefined>)
   const hecke = wert("hecke");
   if (ZAHL.test(hecke)) handoff.hecke = hecke;
 
-  const schnitte = wert("schnitte");
-  if (schnitte === "1" || schnitte === "2") handoff.schnitte = Number(schnitte);
+  const schnitte = Number(wert("schnitte"));
+  if (Number.isInteger(schnitte) && schnitte >= 1 && schnitte <= HECKE_SCHNITTE_MAX) handoff.schnitte = schnitte;
 
   const zustand = wert("zustand");
   if (ZUSTAND_OPTIONEN.some((option) => option.id === zustand)) handoff.zustand = zustand as Pflegezustand;

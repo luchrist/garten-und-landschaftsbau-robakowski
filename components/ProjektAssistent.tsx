@@ -15,6 +15,7 @@ import {
   HANG_OPTIONEN,
   isHybridService,
   isPflegeService,
+  HECKE_SCHNITT_OPTIONEN,
   matchBudget,
   mengeFrage,
   PFLEGE_LEISTUNGEN,
@@ -987,12 +988,16 @@ export function ProjektAssistent({
                 <div className="mt-4">
                   <span className="text-[13px] text-ink/70">Wie oft soll die Hecke geschnitten werden?</span>
                   <div className="mt-2 grid gap-3 sm:grid-cols-2">
-                    <ChoiceButton selected={state.heckeSchnitte === 1} onClick={() => patch({ heckeSchnitte: 1 })}>
-                      Einmal im Jahr
-                    </ChoiceButton>
-                    <ChoiceButton selected={state.heckeSchnitte === 2} onClick={() => patch({ heckeSchnitte: 2 })}>
-                      Zweimal im Jahr
-                    </ChoiceButton>
+                    {HECKE_SCHNITT_OPTIONEN.map((option) => (
+                      <ChoiceButton
+                        key={option.anzahl}
+                        selected={state.heckeSchnitte === option.anzahl}
+                        onClick={() => patch({ heckeSchnitte: option.anzahl })}
+                      >
+                        <span className="block font-medium">{option.label}</span>
+                        <span className="block text-[13px] text-ink/55">{option.hint}</span>
+                      </ChoiceButton>
+                    ))}
                   </div>
                 </div>
               ) : null}

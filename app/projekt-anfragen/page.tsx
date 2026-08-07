@@ -86,7 +86,7 @@ export default async function ProjektAnfragenPage({
                     rel="noopener noreferrer"
                     className="mt-5 inline-flex w-full items-center justify-center rounded-full border border-laub-500 px-6 py-3 text-[13px] font-medium text-laub-700 transition-colors hover:bg-laub-50"
                   >
-                    Kurze Frage per WhatsApp
+                    Per WhatsApp fragen
                   </a>
                 ) : null}
               </div>
